@@ -37,7 +37,11 @@ export NVM_DIR="$HOME/.nvm"
 
 __prompt () {
   local maxlen=78 template="[${HOSTNAME%%.*} ^]"
-  local lcolor='0;38;5;15;48;5;17' pcolor='0;1;38;5;0;48;5;193'
+  local lcolor='0;38;5;15;48;5;17' pcolor='0;1;38;5;0;48;5;81'
+  [[ ${HOSTNAME%%.*} == sadaharu ]]   && pcolor='0;1;38;5;0;48;5;200'
+  [[ ${HOSTNAME%%.*} == kuwadorian ]] && pcolor='0;1;38;5;0;48;5;220'
+  [[ ${HOSTNAME%%.*} == deuterium ]]  && pcolor='0;1;38;5;0;48;5;202'
+  [[ ${HOSTNAME%%.*} == element ]]    && pcolor='0;1;38;5;0;48;5;118'
   (( EUID == 0 )) && lcolor='0;38;5;15;48;5;52'
 
   local wd="${PWD/#$HOME/'~'}"; local prompt="${template/^/$wd}"
