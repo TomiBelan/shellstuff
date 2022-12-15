@@ -1,0 +1,348 @@
+#!/bin/bash
+
+set -e -u -o pipefail
+
+self=$(readlink -fv "$0")
+
+localcache=${HOME:?"HOME missing"}/.cache/rrpak-local
+updateconf=${RRPAK_UPDATE_CONF:-${XDG_CONFIG_HOME:-$HOME/.config}/rrpak-update.conf}
+
+usage () {
+  echo >&2 "Usage:
+  rrpak update
+  rrpak run [--old|--new] PACKAGE... -- PROGRAM ARGS...
+  rrpak local [--old|--new] PACKAGE...
+  rrpak clean [--force]
+  rrpak build OUT-DIR PACKAGE...
+  rrpak hook"
+  exit $1
+}
+
+curltar () {
+  echo >&2 "Downloading $1"
+  curl -fL# "$1" | tar "${@:2}"
+}
+
+wrapgrep () {
+  grep "$@" && true
+  (( "$?" < 2 ))  # 0 and 1 are good exit codes
+}
+
+install_micromamba () {
+  mkdir -p "$destination/misc"
+  curltar 'https://micro.mamba.pm/api/micromamba/linux-64/latest' -xj --strip-components=1 -C "$destination/misc" bin/micromamba
+  # The tarball also contains info/ with licenses and build info jsons. Probably not needed.
+  if [ "${1:-}" != "implicit" ]; then
+    # Skip '-s bash'. Micromamba will guess the shell by inspecting its PPID. This should allow $destination/rc to work with non-bash posix shells (disclaimer: never tested).
+    # Work around https://github.com/mamba-org/mamba/issues/1748 and https://github.com/mamba-org/mamba/issues/2163.
+    echo "eval \"\$(${destination@Q}/misc/micromamba shell hook | sed '/COMPREPLY/ s/.MAMBA_EXE/__mamba_exe/; /PATH.*condabin/ s/.*/true/')\"" >> "$destination/rc"
+
+    # rrpak does not set MAMBA_ROOT_PREFIX. The user can set it if they want.
+  fi
+}
+
+install_age () {
+  mkdir -p "$destination/bin"
+  curltar 'https://dl.filippo.io/age/latest?for=linux/amd64' -xz --strip-components=1 -C "$destination/bin" age/age age/age-keygen
+  # The tarball also contains age/LICENSE.
+}
+
+install_gh () {
+  mkdir -p "$destination/bin"
+  local ver
+  ver=$(curl -sS https://api.github.com/repos/cli/cli/releases/latest | wrapgrep -o -m 1 '"gh[^"]*linux_amd64.tar.gz"' | tr -d '"')
+  if [ "$ver" == "" ]; then
+    echo >&2 "Error: Unable to determine gh version"
+    exit 1
+  fi
+  curltar "https://github.com/cli/cli/releases/latest/download/$ver" -xz --strip-components=2 -C "$destination/bin" "${ver%.tar.gz}/bin/gh"
+  # The tarball also contains gh_*/share/man. Probably not needed.
+}
+
+install_lf () {
+  mkdir -p "$destination/bin" "$destination/misc"
+  curltar 'https://github.com/gokcehan/lf/releases/latest/download/lf-linux-amd64.tar.gz' -xz -C "$destination/misc" lf
+  echo $'#!/bin/bash\nexec "$(dirname "$0")/../misc/lf" -single "$@"' > "$destination/bin/lf"
+  chmod a+x "$destination/bin/lf"
+}
+
+install_ripgrep () {
+  mkdir -p "$destination/bin" "$destination/misc" "$destination/ripgreptmp"
+  local ver
+  ver=$(curl -sS https://api.github.com/repos/BurntSushi/ripgrep/releases/latest | wrapgrep -o -m 1 '"ripgrep[^"]*x86_64-unknown-linux-musl.tar.gz"' | tr -d '"')
+  if [ "$ver" == "" ]; then
+    echo >&2 "Error: Unable to determine ripgrep version"
+    exit 1
+  fi
+  curltar "https://github.com/BurntSushi/ripgrep/releases/latest/download/$ver" -xz --strip-components=1 -C "$destination/ripgreptmp" "${ver%.tar.gz}/rg" "${ver%.tar.gz}/complete/rg.bash"
+  mv "$destination/ripgreptmp/rg" "$destination/bin"
+  mv "$destination/ripgreptmp/complete/rg.bash" "$destination/misc"
+  rmdir "$destination/ripgreptmp/complete"
+  rmdir "$destination/ripgreptmp"
+  echo "source ${destination@Q}/misc/rg.bash" >> "$destination/rc"
+}
+
+install_micro () {
+  mkdir -p "$destination/bin"
+  local ver
+  ver=$(curl -sS https://api.github.com/repos/zyedidia/micro/releases/latest | wrapgrep -o -m 1 '"micro[^"]*linux64.tar.gz"' | tr -d '"')
+  if [ "$ver" == "" ]; then
+    echo >&2 "Error: Unable to determine micro version"
+    exit 1
+  fi
+  curltar "https://github.com/zyedidia/micro/releases/latest/download/$ver" -xz --strip-components=1 -C "$destination/bin" "${ver%-*.tar.gz}/micro"
+  # The tarball also contains LICENSE, LICENSE-THIRD-PARTY, README.md, micro.1, micro.desktop, micro.svg.
+}
+
+normalize_packages () {
+  for pkg in "${packages[@]}"; do
+    case "$pkg" in
+      conda.*) ;;
+      *)
+        if [ "$(type -t "install_$pkg" 2>/dev/null)" != function ]; then
+          echo >&2 "Unknown package '$pkg'"
+          exit 1
+        fi
+        ;;
+    esac
+  done
+  local oldIFS="$IFS"
+  IFS=$'\n'
+  local tmp="$(printf '%s\n' "${packages[@]}" | sort -u)"
+  packages=($tmp)
+  IFS=$oldIFS
+}
+
+do_build () {
+  if [ "${destination:0:1}" != "/" ]; then
+    echo >&2 "Internal error: '$destination' should be absolute"
+    exit 1
+  fi
+
+  mkdir "$destination"
+  touch "$destination/rc"
+
+  condapackages=()
+
+  for pkg in "${packages[@]}"; do
+    case "$pkg" in
+      conda.*) condapackages+=("${pkg#*.}");;
+      *) "install_$pkg";;
+    esac
+  done
+
+  if [ "${#condapackages[@]}" != 0 ]; then
+    if ! [ -e "$destination/misc/micromamba" ]; then
+      install_micromamba implicit
+    fi
+
+    export MAMBA_SHOW_BANNER=false
+
+    # If a micromamba cache directory is not already set, use a temporary local cache instead of defaulting to ~/micromamba.
+    if [ -n "${CONDA_PKGS_DIRS:-}" ]; then
+      true
+    elif [ -n "${MAMBA_ROOT_PREFIX:-}" ] && [ -e "$MAMBA_ROOT_PREFIX/pkgs" ]; then
+      true
+    elif [ -f "$HOME/.mambarc" ] && [[ "$(< "$HOME/.mambarc")" == *pkgs_dirs* ]]; then
+      true
+    else
+      export CONDA_PKGS_DIRS="$destination/mpkgs"
+    fi
+
+    # 'micromamba create' 1. just touches $env/conda-meta/history, 2. writes $env to ~/.conda/environments.txt.
+    # We don't want to add this environment to environments.txt because it looks ugly.
+    # But there is no option or config setting to disable it.
+    # Instead of calling 'micromamba create', let's make it ourselves. Then populate it with 'micromamba install'.
+    mkdir "$destination/menv" "$destination/menv/conda-meta"
+    touch "$destination/menv/conda-meta/history"
+
+    "$destination/misc/micromamba" install -y -p "$destination/menv" -c conda-forge "${condapackages[@]}"
+    # TODO: limited bin in path, with wrappers? probably later (if ever).
+
+    rm -rf "$destination/mpkgs"
+  fi
+
+  # FYI: How 'micromamba activate' works.
+  #
+  # 'micromamba activate -p $env' would do these changes:
+  # - Modify $PS1, prepending '($env) '.
+  #   - TODO: Let's modify $PS1 for 'rrpak local' envs, but not the main env from 'rrpak update'.
+  # - Modify $PATH, prepending $env/bin.
+  #   - This is the only change we're interested in.
+  #   - E.g. 'man' also uses $PATH to look up manpages in ../man, man, ../share/man, share/man.
+  # - Set CONDA_PREFIX to $env. Effects of CONDA_PREFIX:
+  #   - $env is used as the default 'target_prefix' by 'micromamba install', 'micromamba update', etc.
+  #   - 'micromamba deactivate' knows what to deactivate.
+  #   - 'micromamba activate' knows what activation to undo if non-stacked.
+  #   - the environment is labelled as "(active)" in 'micromamba info'
+  # - Set CONDA_SHLVL to 1. Effects of CONDA_SHLVL:
+  #   - 'micromamba shell hook' won't add $MAMBA_ROOT_PREFIX/condabin to $PATH.
+  #   - 'micromamba activate' and 'micromamba deactivate' track the stack of activations.
+  # - Set CONDA_DEFAULT_ENV to $env. Effects of CONDA_DEFAULT_ENV:
+  #   - Only used to build CONDA_PROMPT_MODIFIER.
+  # - Set CONDA_PROMPT_MODIFIER to '($env) '. Effects of CONDA_PROMPT_MODIFIER:
+  #   - Only used to update PS1, and undo it in 'micromamba deactivate'.
+
+  for dir in "$destination/bin" "$destination/menv/bin"; do
+    if [ -e "$dir" ]; then
+      printf 'case ":$PATH:" in\n  *:%s:*) ;;\n  *) PATH=%s:$PATH;;\nesac\n' "${dir@Q}" "${dir@Q}" >> "$destination/rc"
+    fi
+  done
+}
+
+(( $# == 0 )) && usage 0
+
+cmd=$1
+shift
+case "$cmd" in
+  hook)
+    [ "$#" != 0 ] && usage 1
+
+    # default config values
+    destination=$HOME/.rrpak
+    backups=
+    packages=()
+    remind='40 days hence'
+
+    if [ -e "$updateconf" ]; then
+      source "$updateconf"
+    fi
+
+    echo 'rrpak () {'
+    echo '  if [ "$1" == "local" ]; then'
+    echo '    shift'
+    echo '    local code'
+    echo '    code=$('"${self@Q}"' internal-local "$@") || return $?'
+    echo '    eval "$code"'
+    echo '  else'
+    echo '    '"${self@Q}"' "$@"'
+    echo '  fi'
+    echo '}'
+
+    if [ "${#packages[@]}" != 0 ]; then
+      rc=$destination/rc
+      echo
+      echo "[ -f ${rc@Q} ] && source ${rc@Q} || true"
+    fi
+    ;;
+
+  update)
+    [ "$#" != 0 ] && usage 1
+
+    # default config values
+    destination=$HOME/.rrpak
+    backups=
+    packages=()
+    remind='40 days hence'
+
+    if ! [ -e "$updateconf" ]; then
+      echo >&2 "Create '$updateconf' with: packages=(foo bar)"
+      exit 1
+    fi
+    source "$updateconf"
+    if [ "${#packages[@]}" == 0 ]; then
+      echo >&2 "No packages set. Write in '$updateconf': packages=(foo bar)"
+      exit 1
+    fi
+    if [ -e "$destination" ]; then
+      if [ "$backups" == "no" ]; then
+        rm -rf "$destination"
+      else
+        backuptemp=$(mktemp -d --tmpdir"${backups:+=}$backups" "rrpak-update-$(date +%s).XXXXXXXXXX")
+        mv "$destination" "$backuptemp/oldbackup"
+      fi
+    fi
+    "$0" build "$destination" "${packages[@]}"
+    if [ "$remind" != "" ] && [ "$remind" != "no" ]; then
+      expire=$(date +%s -d "$remind")
+      echo "(( \$(date +%s) > $expire )) && echo >&2 \"It's been a long time since 'rrpak update'. When you have time, run it again.\"" >> "$destination/rc"
+    fi
+    "$0" clean
+    ;;
+
+  build)
+    [ "$#" == 0 ] && usage 1
+    destination=$(readlink -fv "$1")
+    shift
+    packages=("$@")
+    normalize_packages
+    do_build
+    ;;
+
+  run)
+    localargs=()
+    while [ "${1:-}" != "--" ]; do
+      if [ "$#" == 0 ]; then
+        echo >&2 "Error: Missing '--' argument to rrpak run"
+        usage 1
+      fi
+      localargs+=("$1")
+      shift
+    done
+    code=$("$0" internal-local "${localargs[@]}")
+    eval "$code"
+    shift
+    "$@"
+    ;;
+
+  local)
+    echo >&2 "Misconfiguration: 'rrpak local' should be handled by the rrpak shell function"
+    exit 1
+    ;;
+
+  internal-local)
+    exec 9>&1
+    exec >&2
+    opt=
+    if [ "${1:-}" == "--old" ] || [ "${1:-}" == "--new" ]; then
+      opt=$1
+      shift
+    fi
+    packages=("$@")
+    normalize_packages
+    if [ "$opt" != "--old" ]; then
+      "$0" clean
+    fi
+    destination=$localcache/$(printf '%s\n' "${packages[@]}" | sort -u | sha256sum | cut -d' ' -f1).rrpak
+    mkdir -p "$localcache"
+    if [ "$opt" == "--new" ]; then
+      rm -rf "$destination"
+    fi
+    if ! [ -e "$destination" ]; then
+      if [ "$opt" == "--old" ]; then
+        echo >&2 "Error: This package list is not in the cache. Try again without --old."
+        exit 1
+      fi
+      echo >&2 "Installing ${packages[*]} to $destination..."
+      do_build
+      echo >&2 "Done."
+      echo "$(( $(date +%s) + 30 * 24 * 3600 ))" > "$destination/expire"
+    fi
+    rc=$destination/rc
+    echo >&9 "source ${rc@Q}"
+    ;;
+
+  clean)
+    force=
+    [ "${1:-}" == "--force" ] && shift && force=t
+    [ "$#" != 0 ] && usage 1
+    now=$(date +%s)
+    shopt -s nullglob
+    for dir in "$localcache"/*.rrpak; do
+      if [ "$force" == "" ] && [ -e "$dir/expire" ] && (( $(< "$dir/expire") > now )); then
+        true
+      else
+        rm -rf "$dir"
+      fi
+    done
+    ;;
+
+  help|--help)
+    usage 0
+    ;;
+
+  *)
+    echo >&2 "Unknown command '$cmd'"
+    usage 1
+    ;;
+esac
