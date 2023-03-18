@@ -18,9 +18,14 @@ usage () {
   exit $1
 }
 
-curltar () {
-  echo >&2 "Downloading $1"
-  curl -fL# "$1" | tar "${@:2}"
+wrapcurl () {
+  echo >&2 "Downloading ${@: -1}"
+  curl -fL $([[ -t 2 ]] && echo -#) "$@" && true
+  case "$?" in
+  0) true;;
+  23) echo >&2 "Ignoring curl error";;  # Can happen with "grep -m1". See https://stackoverflow.com/a/28879552
+  *) false;;
+  esac
 }
 
 wrapgrep () {
@@ -30,7 +35,7 @@ wrapgrep () {
 
 install_micromamba () {
   mkdir -p "$destination/misc"
-  curltar 'https://micro.mamba.pm/api/micromamba/linux-64/latest' -xj --strip-components=1 -C "$destination/misc" bin/micromamba
+  wrapcurl 'https://micro.mamba.pm/api/micromamba/linux-64/latest' | tar -xj --strip-components=1 -C "$destination/misc" bin/micromamba
   # The tarball also contains info/ with licenses and build info jsons. Probably not needed.
   if [ "${1:-}" != "implicit" ]; then
     # Skip '-s bash'. Micromamba will guess the shell by inspecting its PPID. This should allow $destination/rc to work with non-bash posix shells (disclaimer: never tested).
@@ -43,25 +48,25 @@ install_micromamba () {
 
 install_age () {
   mkdir -p "$destination/bin"
-  curltar 'https://dl.filippo.io/age/latest?for=linux/amd64' -xz --strip-components=1 -C "$destination/bin" age/age age/age-keygen
+  wrapcurl 'https://dl.filippo.io/age/latest?for=linux/amd64' | tar -xz --strip-components=1 -C "$destination/bin" age/age age/age-keygen
   # The tarball also contains age/LICENSE.
 }
 
 install_gh () {
   mkdir -p "$destination/bin"
   local ver
-  ver=$(curl -sS https://api.github.com/repos/cli/cli/releases/latest | wrapgrep -o -m 1 '"gh[^"]*linux_amd64.tar.gz"' | tr -d '"')
+  ver=$(wrapcurl -sS https://api.github.com/repos/cli/cli/releases/latest | wrapgrep -o -m 1 '"gh[^"]*linux_amd64.tar.gz"' | tr -d '"')
   if [ "$ver" == "" ]; then
     echo >&2 "Error: Unable to determine gh version"
     exit 1
   fi
-  curltar "https://github.com/cli/cli/releases/latest/download/$ver" -xz --strip-components=2 -C "$destination/bin" "${ver%.tar.gz}/bin/gh"
+  wrapcurl "https://github.com/cli/cli/releases/latest/download/$ver" | tar -xz --strip-components=2 -C "$destination/bin" "${ver%.tar.gz}/bin/gh"
   # The tarball also contains gh_*/share/man. Probably not needed.
 }
 
 install_lf () {
   mkdir -p "$destination/bin" "$destination/misc"
-  curltar 'https://github.com/gokcehan/lf/releases/latest/download/lf-linux-amd64.tar.gz' -xz -C "$destination/misc" lf
+  wrapcurl 'https://github.com/gokcehan/lf/releases/latest/download/lf-linux-amd64.tar.gz' | tar -xz -C "$destination/misc" lf
   echo $'#!/bin/bash\nexec "$(dirname "$0")/../misc/lf" -single "$@"' > "$destination/bin/lf"
   chmod a+x "$destination/bin/lf"
 }
@@ -69,12 +74,12 @@ install_lf () {
 install_ripgrep () {
   mkdir -p "$destination/bin" "$destination/misc" "$destination/ripgreptmp"
   local ver
-  ver=$(curl -sS https://api.github.com/repos/BurntSushi/ripgrep/releases/latest | wrapgrep -o -m 1 '"ripgrep[^"]*x86_64-unknown-linux-musl.tar.gz"' | tr -d '"')
+  ver=$(wrapcurl -sS https://api.github.com/repos/BurntSushi/ripgrep/releases/latest | wrapgrep -o -m 1 '"ripgrep[^"]*x86_64-unknown-linux-musl.tar.gz"' | tr -d '"')
   if [ "$ver" == "" ]; then
     echo >&2 "Error: Unable to determine ripgrep version"
     exit 1
   fi
-  curltar "https://github.com/BurntSushi/ripgrep/releases/latest/download/$ver" -xz --strip-components=1 -C "$destination/ripgreptmp" "${ver%.tar.gz}/rg" "${ver%.tar.gz}/complete/rg.bash"
+  wrapcurl "https://github.com/BurntSushi/ripgrep/releases/latest/download/$ver" | tar -xz --strip-components=1 -C "$destination/ripgreptmp" "${ver%.tar.gz}/rg" "${ver%.tar.gz}/complete/rg.bash"
   mv "$destination/ripgreptmp/rg" "$destination/bin"
   mv "$destination/ripgreptmp/complete/rg.bash" "$destination/misc"
   rmdir "$destination/ripgreptmp/complete"
@@ -85,12 +90,12 @@ install_ripgrep () {
 install_micro () {
   mkdir -p "$destination/bin"
   local ver
-  ver=$(curl -sS https://api.github.com/repos/zyedidia/micro/releases/latest | wrapgrep -o -m 1 '"micro[^"]*linux64.tar.gz"' | tr -d '"')
+  ver=$(wrapcurl -sS https://api.github.com/repos/zyedidia/micro/releases/latest | wrapgrep -o -m 1 '"micro[^"]*linux64.tar.gz"' | tr -d '"')
   if [ "$ver" == "" ]; then
     echo >&2 "Error: Unable to determine micro version"
     exit 1
   fi
-  curltar "https://github.com/zyedidia/micro/releases/latest/download/$ver" -xz --strip-components=1 -C "$destination/bin" "${ver%-*.tar.gz}/micro"
+  wrapcurl "https://github.com/zyedidia/micro/releases/latest/download/$ver" | tar -xz --strip-components=1 -C "$destination/bin" "${ver%-*.tar.gz}/micro"
   # The tarball also contains LICENSE, LICENSE-THIRD-PARTY, README.md, micro.1, micro.desktop, micro.svg.
 }
 
