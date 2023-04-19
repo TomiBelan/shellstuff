@@ -141,18 +141,20 @@ do_build () {
       install_micromamba implicit
     fi
 
+    unset "${!CONDA@}"
+    unset "${!MAMBA@}"
+
     export MAMBA_SHOW_BANNER=false
 
-    # If a micromamba cache directory is not already set, use a temporary local cache instead of defaulting to ~/micromamba.
-    if [ -n "${CONDA_PKGS_DIRS:-}" ]; then
-      true
-    elif [ -n "${MAMBA_ROOT_PREFIX:-}" ] && [ -e "$MAMBA_ROOT_PREFIX/pkgs" ]; then
-      true
-    elif [ -f "$HOME/.mambarc" ] && [[ "$(< "$HOME/.mambarc")" == *pkgs_dirs* ]]; then
-      true
-    else
-      export CONDA_PKGS_DIRS="$destination/mpkgs"
-    fi
+    # Always use a local package cache directory. Don't share packages between rrpak invocations.
+    # Because:
+    # 1. Unlike rrpak, micromamba doesn't automatically clean the cache. Old package versions are
+    #    kept forever until the user manually runs `micromamba clean ...`.
+    #    (Side note: `micromamba clean` may delete up-to-date packages too because it only checks
+    #    what packages are used by named envs. See `envs` in libmamba/src/api/clean.cpp.)
+    # 2. micromamba uses hardlinks to share files between envs and the cache, but the frequent
+    #    updates of atime and ctime (st_nlinks) interfere with my tmp directory cleaning tool.
+    export CONDA_PKGS_DIRS="$destination/mpkgs"
 
     # 'micromamba create' 1. just touches $env/conda-meta/history, 2. writes $env to ~/.conda/environments.txt.
     # We don't want to add this environment to environments.txt because it looks ugly.
@@ -161,7 +163,7 @@ do_build () {
     mkdir "$destination/menv" "$destination/menv/conda-meta"
     touch "$destination/menv/conda-meta/history"
 
-    "$destination/misc/micromamba" install -y -p "$destination/menv" -c conda-forge "${condapackages[@]}"
+    "$destination/misc/micromamba" --no-rc install -y -p "$destination/menv" -c conda-forge "${condapackages[@]}"
     # TODO: limited bin in path, with wrappers? probably later (if ever).
 
     rm -rf "$destination/mpkgs"
