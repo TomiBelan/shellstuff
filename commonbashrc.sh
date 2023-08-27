@@ -81,6 +81,9 @@ export LESS=-MRi
 # 489+). I removed K (I don't want it). I added i.
 export SYSTEMD_LESS=FRSMi
 
+# Change default columns shown by `ps`.
+# But note that this disables the STAT and TIME columns.
+# If you need them, run ps with: `PS_FORMAT= ps ...`
 export PS_FORMAT=pid,user,tname,start_time,args
 
 type nano &>/dev/null && export EDITOR=nano
