@@ -4,7 +4,13 @@ HISTCONTROL=ignoreboth
 HISTSIZE=50000
 HISTFILESIZE=50000
 
-shopt -s checkwinsize  # http://cnswww.cns.cwru.edu/~chet/bash/FAQ (E11)
+# Bash won't get SIGWINCH if another process is in the foreground.
+# Enable checkwinsize so that bash will check the terminal size when
+# it regains control.
+# Updated links:
+#   https://bugs.gentoo.org/65623
+#   https://tiswww.case.edu/php/chet/bash/FAQ (E11)
+shopt -s checkwinsize
 
 unalias ll la 2>/dev/null
 alias grep='grep --color=auto'
@@ -22,7 +28,11 @@ h () {
   HISTFILE=
 }
 
+# Good for `ls` (case sensitive sort) and `bash` (case sensitive [A-Z] globs).
+# It could also be solved with `alias ls=...` and `shopt -s globasciiranges`,
+# but exporting LC_COLLATE=C for all programs is probably a saner default.
 export LC_COLLATE=C
+
 export LESS=-MRi
 export PS_FORMAT=pid,user,tname,start_time,args
 type nano &>/dev/null && export EDITOR=nano
