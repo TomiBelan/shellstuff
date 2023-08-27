@@ -75,6 +75,12 @@ export LC_COLLATE=C
 
 export LESS=-MRi
 
+# The pager options used by systemctl and journalctl. This won't work with
+# `sudo systemctl`, but it's better than nothing.
+# The default value is FRSXMK. I removed X (no longer necessary with -F in less
+# 489+). I removed K (I don't want it). I added i.
+export SYSTEMD_LESS=FRSMi
+
 export PS_FORMAT=pid,user,tname,start_time,args
 
 type nano &>/dev/null && export EDITOR=nano
