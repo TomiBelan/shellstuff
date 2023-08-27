@@ -46,25 +46,22 @@ export NVM_DIR="$HOME/.nvm"
 [ -f ~/goostuff/goobash ] && source ~/goostuff/goobash
 
 __prompt () {
-  local maxlen=78 template="[${HOSTNAME%%.*} ^]"
-  local lcolor='0;38;5;15;48;5;17' pcolor='0;1;38;5;0;48;5;81'
-  [[ ${HOSTNAME%%.*} == sadaharu ]]   && pcolor='0;1;38;5;0;48;5;200'
-  [[ ${HOSTNAME%%.*} == kuwadorian ]] && pcolor='0;1;38;5;0;48;5;220'
-  [[ ${HOSTNAME%%.*} == deuterium ]]  && pcolor='0;1;38;5;0;48;5;202'
-  [[ ${HOSTNAME%%.*} == element ]]    && pcolor='0;1;38;5;0;48;5;118'
-  (( EUID == 0 )) && lcolor='0;38;5;15;48;5;52'
+  __shellstuff_promptcolors="[0;1;38;5;16;48;5;$(( ${#HISTFILE} == 0 ? 248 : ${SHELLSTUFF_PROMPT_COLOR:-81} ))m"
+  __shellstuff_linecolors="[0;38;5;231;48;5;$(( ${#HISTFILE} == 0 ? 235 : EUID == 0 ? 52 : 17 ))m"
 
-  local wd="${PWD/#$HOME/'~'}"; local prompt="${template/^/$wd}"
-  (( ${#prompt} > maxlen )) && wd=...${wd:${#prompt}-${maxlen}+3}
-  echo -n $'\e['"$lcolor"$'m\e[K'  # ctrl+R glitches if \e[K is in PS1
-  PS1='\[\e['$pcolor'm\]'"${template/^/$wd}"'\[\e['$lcolor'm\]\$ '
+  local maxlen=80 wd='\w'
+  wd=${wd@P}
+  (( ${#wd} > maxlen )) && wd=...${wd:${#wd}-${maxlen}+3}
+  __shellstuff_prompttext="[${HOSTNAME%%.*} $wd]"
 
-  [[ $VIRTUAL_ENV ]] && PS1='\[\e[1;37;40m\]'"(${VIRTUAL_ENV##*/})$PS1"
+  # ctrl+R glitches if \e[K is in PS1
+  echo -n $'\e'"$__shellstuff_linecolors"$'\e[K' >&2
 }
 [[ "$PROMPT_COMMAND" ]] && echo >&2 "overriding PROMPT_COMMAND [$PROMPT_COMMAND]"
 PROMPT_COMMAND='__prompt'   # __debugtrap needs this to be the only thing
 
-PS0=$'\e[0m\e[K'
+PS1='\[\e${__shellstuff_promptcolors}\]${__shellstuff_prompttext}\[\e${__shellstuff_linecolors}\]\$ '
+PS0='\[\e[0m\e[K\]'
 
 __debugtrap () {
   [ -n "$COMP_LINE" ] && return 0
