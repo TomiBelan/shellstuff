@@ -1,8 +1,25 @@
 # Tomi's universal bash initialization file
 
+# ----- HISTORY ----------------------------------------------------------------
+
+# See explanation in README.md.
+if [[ $HISTFILESIZE != "" ]] && [[ -t 2 ]]; then
+  echo >&2 "commonbashrc.sh warning: HISTFILESIZE was already set to $HISTFILESIZE by some earlier rc script! This truncates the history in $HISTFILE."
+fi
+
 HISTCONTROL=ignoreboth
 HISTSIZE=50000
 HISTFILESIZE=50000
+
+# This enables writing timestamps to .bash_history and shows them in `history`.
+HISTTIMEFORMAT='%F %T %z '
+
+# `h` is a shortcut to disable history for this shell.
+h () {
+  HISTFILE=
+}
+
+# ----- SHELL OPTIONS ----------------------------------------------------------
 
 # Bash won't get SIGWINCH if another process is in the foreground.
 # Enable checkwinsize so that bash will check the terminal size when
@@ -11,6 +28,30 @@ HISTFILESIZE=50000
 #   https://bugs.gentoo.org/65623
 #   https://tiswww.case.edu/php/chet/bash/FAQ (E11)
 shopt -s checkwinsize
+
+# histappend is almost always meaningless, but we might as well enable it.
+# Everyone online is wrong about it, except these links:
+#   https://unix.stackexchange.com/a/428208
+#   https://lists.gnu.org/archive/html/help-bash/2016-05/msg00022.html
+# histappend only matters when (num commands entered this session) > $HISTSIZE && $HISTFILESIZE > $HISTSIZE.
+#   suppose HISTSIZE=5, HISTFILESIZE=100, and you run 10 commands and log out:
+#   if histappend is off, HISTFILE will contain only the last 5 commands from this session.
+#   if histappend is on, HISTFILE will contain 95 old commands and the last 5 commands from this session.
+shopt -s histappend
+
+# Obvious improvement, ought to be enabled by default.
+shopt -s checkhash
+
+# Disable history substitution with `!`. I don't think I ever used it on purpose.
+set +H
+
+# My current terminal (Wezterm) complains when bash has nonzero exit status.
+# This forces bash to always exit with 0, even if the last command was "false"
+# or we pressed ^C just before ^D. I'm OK with this because the exit status of
+# an interactive shell isn't really meaningful.
+trap 'exit 0' EXIT
+
+# ----- ALIASES ----------------------------------------------------------------
 
 unalias ll la 2>/dev/null
 alias grep='grep --color=auto'
@@ -21,12 +62,11 @@ alias du='du -h'
 alias df='df -h'
 alias free='free -h'
 alias m='less'
+# `pskt` lists all processes except kernel threads (descendants of PID 2).
 alias pskt='ps --ppid 2 -p 2 --deselect'
 type ag &>/dev/null && alias ag='ag --color-match="4;31"'
 
-h () {
-  HISTFILE=
-}
+# ----- VARIABLES --------------------------------------------------------------
 
 # Good for `ls` (case sensitive sort) and `bash` (case sensitive [A-Z] globs).
 # It could also be solved with `alias ls=...` and `shopt -s globasciiranges`,
@@ -34,7 +74,9 @@ h () {
 export LC_COLLATE=C
 
 export LESS=-MRi
+
 export PS_FORMAT=pid,user,tname,start_time,args
+
 type nano &>/dev/null && export EDITOR=nano
 
 export NVM_DIR="$HOME/.nvm"
@@ -44,6 +86,12 @@ export NVM_DIR="$HOME/.nvm"
 [ -d ~/.bin ] && [[ $PATH != *"$HOME/.bin"* ]] && export PATH="$HOME/.bin:$PATH"
 
 [ -f ~/goostuff/goobash ] && source ~/goostuff/goobash
+
+# ----- PROMPT AND WINDOW TITLE ------------------------------------------------
+
+# Note: As a self imposed restriction / challenge, I don't want to fork any
+# unnecessary processes. If I run `ps` twice, they should have successive PIDs.
+# This means I can't use process substitution in PS1 (at least as of Bash 5.1).
 
 __prompt () {
   __shellstuff_promptcolors="[0;1;38;5;16;48;5;$(( ${#HISTFILE} == 0 ? 248 : ${SHELLSTUFF_PROMPT_COLOR:-81} ))m"
