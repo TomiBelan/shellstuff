@@ -1,5 +1,49 @@
 # Tomi's universal bash initialization file
 
+# ----- BORROWED ---------------------------------------------------------------
+
+# Borrowed from Fedora's /etc/skel/.bashrc.
+# On Fedora, ~/.bashrc is responsible for reading /etc/bashrc. (They do not use
+# the SYS_BASHRC compile option.) Hopefully this should be harmless on other
+# distributions, I haven't seen anyone except Fedora using this exact filename.
+# XXX: As of this writing, this was never tested. I don't use Fedora.
+if [ -f /etc/bashrc ]; then
+  . /etc/bashrc
+fi
+
+# Not borrowing Fedora's ~/.bashrc.d/* because I don't think I'll need it.
+
+# Borrowed from Ubuntu's /etc/skel/.bashrc. Should also work on Debian.
+# It sets LESSOPEN and LESSCLOSE.
+# On Arch, Fedora, and Gentoo, LESSOPEN should be already set by /etc/profile.d
+# or /etc/env.d, and it might be named `lesspipe.sh` anyway.
+[[ -z "$LESSOPEN" ]] && type lesspipe &>/dev/null && eval "$(lesspipe)"
+
+# Borrowed from Debian/Ubuntu's /etc/skel/.bashrc. Should also work on Arch.
+# It sets LS_COLORS.
+# On Fedora and Gentoo the system bashrc file already takes care of this.
+if [[ -z "$LS_COLORS" ]] && [[ -x /usr/bin/dircolors ]]; then
+    test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
+fi
+
+# Borrowed from Debian/Ubuntu's /etc/skel/.bashrc.
+# On Arch, Fedora and Gentoo the system bashrc file already takes care of this.
+if [[ -z "$BASH_COMPLETION_VERSINFO" ]] && ! shopt -oq posix; then
+  if [ -f /usr/share/bash-completion/bash_completion ]; then
+    . /usr/share/bash-completion/bash_completion
+  elif [ -f /etc/bash_completion ]; then
+    . /etc/bash_completion
+  fi
+fi
+
+# Not borrowing Debian/Ubuntu's /etc/debian_chroot in PS1 because that file
+# seems to be only created by `schroot`.
+
+# Borrowed from Ubuntu's /etc/skel/.bashrc.
+# Add an "alert" alias for long running commands.  Use like so:
+#   sleep 10; alert
+alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
+
 # ----- HISTORY ----------------------------------------------------------------
 
 # See explanation in README.md.
