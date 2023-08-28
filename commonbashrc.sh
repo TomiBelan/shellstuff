@@ -88,13 +88,8 @@ export PS_FORMAT=pid,user,tname,start_time,args
 
 type nano &>/dev/null && export EDITOR=nano
 
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" # This loads nvm
-
 [ -d ~/Sync/dotfiles/bin ] && [[ $PATH != *Sync/dotfiles/bin* ]] && export PATH="$HOME/Sync/dotfiles/bin-$HOSTNAME:$HOME/Sync/dotfiles/bin:$PATH"
 [ -d ~/.bin ] && [[ $PATH != *"$HOME/.bin"* ]] && export PATH="$HOME/.bin:$PATH"
-
-[ -f ~/goostuff/goobash ] && source ~/goostuff/goobash
 
 # ----- PROMPT AND WINDOW TITLE ------------------------------------------------
 
@@ -136,8 +131,8 @@ __debugtrap () {
     echo -n $'\e]0;'"$c${HOSTNAME%%.*}:${PWD/#$HOME/'~'}"$'\a'
   fi
 
-  # on goostuff, always save history immediately (effectively after every prompt)
-  [ -f ~/goostuff/goobash ] && [ "$HISTFILE" ] && ! [[ "$BASH_COMMAND" =~ ^\ *(h|HISTFILE=)\ *$ ]] && history -a
+  # if enabled, save each command to the history file immediately (before running it).
+  [[ "$SHELLSTUFF_SAVE_OFTEN" ]] && [[ "$HISTFILE" ]] && ! [[ "$BASH_COMMAND" =~ ^\ *(h|HISTFILE=)\ *$ ]] && history -a
 
   # send history information to historywriter.
   local etype=run
