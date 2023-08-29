@@ -47,16 +47,28 @@ alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo
 # ----- HISTORY ----------------------------------------------------------------
 
 # See explanation in README.md.
-if [[ $HISTFILESIZE != "" ]] && [[ -t 2 ]]; then
-  echo >&2 "commonbashrc.sh warning: HISTFILESIZE was already set to $HISTFILESIZE by some earlier rc script! This truncates the history in $HISTFILE."
-fi
-
-HISTCONTROL=ignoreboth
-HISTSIZE=50000
-HISTFILESIZE=50000
 
 # This enables writing timestamps to .bash_history and shows them in `history`.
+# It's best to set it before HISTFILESIZE.
 HISTTIMEFORMAT='%F %T %z '
+
+HISTCONTROL=ignoreboth
+
+HISTSIZE=50000
+
+# Using a custom history file to help prevent accidental truncation.
+# TODO: Do I really want it?
+#
+# This dance is to avoid touching the default .bash_history file and to slightly
+# optimize I/O (how many times we load it). It should work even if HISTFILESIZE
+# was already set by an earlier rc file (although that shouldn't happen).
+HISTFILE=
+HISTFILESIZE=$HISTSIZE
+HISTFILE=~/.bash_history2
+
+if [[ -f ~/.bash_history ]] && ! [[ -f ~/.bash_history2 ]]; then
+  cp -an ~/.bash_history ~/.bash_history2
+fi
 
 # `h` is a shortcut to disable history for this shell.
 h () {
