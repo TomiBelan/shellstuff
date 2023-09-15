@@ -169,7 +169,12 @@ __prompt () {
 PROMPT_COMMAND='__prompt'   # __debugtrap needs this to be the only thing
 
 PS1='\[\e${__shellstuff_promptcolors}\]${__shellstuff_prompttext}\[\e${__shellstuff_linecolors}\]\$ '
-PS0='\[\e[0m\e[K\]'
+
+# PS0 should *not* contain \[ and \]. Bash prints them as '\001' and '\002'.
+# Windows Terminal displays them as rectangle characters. Reason: \[, \] are
+# internally translated to RL_PROMPT_START_IGNORE and RL_PROMPT_END_IGNORE.
+# That's fine for PS1 which is given to readline, but PS0 is just printed.
+PS0='\e[0m\e[K'
 
 __debugtrap () {
   [ -n "$COMP_LINE" ] && return 0
