@@ -255,14 +255,14 @@ case "$cmd" in
       if [ "$backups" == "no" ]; then
         rm -rf "$destination"
       else
-        backuptemp=$(mktemp -d --tmpdir"${backups:+=}$backups" "rrpak-update-$(date +%s).XXXXXXXXXX")
+        backuptemp=$(mktemp -d --tmpdir"${backups:+=}$backups" "rrpak-update-$EPOCHSECONDS.XXXXXXXXXX")
         mv "$destination" "$backuptemp/oldbackup"
       fi
     fi
     "$0" build "$destination" "${packages[@]}"
     if [ "$remind" != "" ] && [ "$remind" != "no" ]; then
       expire=$(date +%s -d "$remind")
-      echo "(( \$(date +%s) > $expire )) && echo >&2 \"It's been a long time since 'rrpak update'. When you have time, run it again.\"" >> "$destination/rc"
+      echo "(( EPOCHSECONDS > $expire )) && echo >&2 \"It's been a long time since 'rrpak update'. When you have time, run it again.\"" >> "$destination/rc"
     fi
     "$0" clean
     ;;
@@ -323,7 +323,7 @@ case "$cmd" in
       echo >&2 "Installing ${packages[*]} to $destination..."
       do_build
       echo >&2 "Done."
-      echo "$(( $(date +%s) + 30 * 24 * 3600 ))" > "$destination/expire"
+      echo "$(( EPOCHSECONDS + 30 * 24 * 3600 ))" > "$destination/expire"
     fi
     rc=$destination/rc
     echo >&9 "source ${rc@Q}"
@@ -333,7 +333,7 @@ case "$cmd" in
     force=
     [ "${1:-}" == "--force" ] && shift && force=t
     [ "$#" != 0 ] && usage 1
-    now=$(date +%s)
+    now=$EPOCHSECONDS
     shopt -s nullglob
     for dir in "$localcache"/*.rrpak; do
       if [ "$force" == "" ] && [ -e "$dir/expire" ] && (( $(< "$dir/expire") > now )); then
