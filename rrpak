@@ -240,6 +240,18 @@ do_build () {
   done
 }
 
+load_updateconf () {
+  # default config values
+  destination=$HOME/.rrpak
+  backups=
+  packages=()
+  remind='40 days hence'
+
+  if [ -e "$updateconf" ]; then
+    source "$updateconf"
+  fi
+}
+
 (( $# == 0 )) && usage 0
 
 cmd=$1
@@ -248,15 +260,7 @@ case "$cmd" in
   hook)
     [ "$#" != 0 ] && usage 1
 
-    # default config values
-    destination=$HOME/.rrpak
-    backups=
-    packages=()
-    remind='40 days hence'
-
-    if [ -e "$updateconf" ]; then
-      source "$updateconf"
-    fi
+    load_updateconf
 
     echo 'rrpak () {'
     echo '  if [ "$1" == "local" ]; then'
@@ -269,27 +273,19 @@ case "$cmd" in
     echo '  fi'
     echo '}'
 
-    if [ "${#packages[@]}" != 0 ]; then
-      rc=$destination/rc
-      echo
-      echo "[ -f ${rc@Q} ] && source ${rc@Q} || true"
-    fi
+    rc=$destination/rc
+    echo
+    echo "[ -f ${rc@Q} ] && source ${rc@Q} || true"
     ;;
 
   update)
     [ "$#" != 0 ] && usage 1
 
-    # default config values
-    destination=$HOME/.rrpak
-    backups=
-    packages=()
-    remind='40 days hence'
-
     if ! [ -e "$updateconf" ]; then
       echo >&2 "Create '$updateconf' with: packages=(foo bar)"
       exit 1
     fi
-    source "$updateconf"
+    load_updateconf
     if [ "${#packages[@]}" == 0 ]; then
       echo >&2 "No packages set. Write in '$updateconf': packages=(foo bar)"
       exit 1
