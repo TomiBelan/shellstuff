@@ -100,6 +100,10 @@ install_micro () {
 }
 
 install_pipx () {
+  # TODO: It is almost possible to delete this now and use 'pip.pipx' instead.
+  # The only slight difference is how pipx selects the default interpreter
+  # when it runs inside a venv.
+
   # System Python is needed. (On Debian-likes: apt install python3 python3-venv)
   # This installs pipx in a custom path (not ~/.local/{bin,lib}).
   # But the default interpreter used by pipx will still be /usr/bin/python3.
@@ -146,6 +150,7 @@ normalize_packages () {
   for pkg in "${packages[@]}"; do
     case "$pkg" in
       conda.*) ;;
+      pip.*) ;;
       *)
         if [ "$(type -t "install_$pkg" 2>/dev/null)" != function ]; then
           echo >&2 "Unknown package '$pkg'"
@@ -171,10 +176,13 @@ do_build () {
   touch "$destination/rc"
 
   condapackages=()
+  pippackages=()
+  pathdirs=("$destination/bin" "$destination/menv/bin")
 
   for pkg in "${packages[@]}"; do
     case "$pkg" in
       conda.*) condapackages+=("${pkg#*.}");;
+      pip.*) pippackages+=("${pkg#*.}");;
       *) "install_$pkg";;
     esac
   done
@@ -212,6 +220,32 @@ do_build () {
     rm -rf "$destination/mpkgs"
   fi
 
+  for pkg in "${pippackages[@]}"; do
+    if [ -f "$destination/menv/bin/python3" ]; then
+      py="$destination/menv/bin/python3"
+    elif [ -f /usr/bin/python3 ]; then
+      py=/usr/bin/python3
+    else
+      echo >&2 "rrpak error: /usr/bin/python3 not found"
+      false
+    fi
+
+    echo >&2 "Installing $pkg with pip in $destination/venv-$pkg using $py"
+    "$py" -m venv --upgrade-deps "$destination/venv-$pkg"
+    existingbins=("$destination/venv-$pkg/bin"/*)
+    "$destination/venv-$pkg/bin/pip" install "$pkg"
+
+    mkdir "$destination/venv-$pkg/filteredbin"
+    pathdirs+=("$destination/venv-$pkg/filteredbin")
+    for binfile in "$destination/venv-$pkg/bin"/*; do
+      existed=
+      for existingbinfile in "${existingbins[@]}"; do
+        [ "$binfile" == "$existingbinfile" ] && existed=y
+      done
+      [ "$existed" == "" ] && ln -s "../bin/${binfile##*/}" "$destination/venv-$pkg/filteredbin"
+    done
+  done
+
   # FYI: How 'micromamba activate' works.
   #
   # 'micromamba activate -p $env' would do these changes:
@@ -233,7 +267,7 @@ do_build () {
   # - Set CONDA_PROMPT_MODIFIER to '($env) '. Effects of CONDA_PROMPT_MODIFIER:
   #   - Only used to update PS1, and undo it in 'micromamba deactivate'.
 
-  for dir in "$destination/bin" "$destination/menv/bin"; do
+  for dir in "${pathdirs[@]}"; do
     if [ -e "$dir" ]; then
       printf 'case ":$PATH:" in\n  *:%s:*) ;;\n  *) PATH=%s:$PATH;;\nesac\n' "${dir@Q}" "${dir@Q}" >> "$destination/rc"
     fi
