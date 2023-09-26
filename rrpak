@@ -99,6 +99,49 @@ install_micro () {
   # The tarball also contains LICENSE, LICENSE-THIRD-PARTY, README.md, micro.1, micro.desktop, micro.svg.
 }
 
+install_pipx () {
+  # System Python is needed. (On Debian-likes: apt install python3 python3-venv)
+  # This installs pipx in a custom path (not ~/.local/{bin,lib}).
+  # But the default interpreter used by pipx will still be /usr/bin/python3.
+  # This is a huge hack to make that happen. It is probably very unsupported
+  # and might not be the best way to do it.
+  mkdir -p "$destination/misc" "$destination/bin"
+
+  # The temporary venv is used just to make it work without systemwide pip.
+  echo >&2 "Creating temporary venv"
+  local tmpenv
+  tmpenv=$(mktemp -d)
+  /usr/bin/python3 -m venv "$tmpenv/v"
+
+  # This is what `-m venv --upgrade-deps` would do. See venv/__init__.py.
+  echo >&2 "Upgrading pip, setuptools"
+  "$tmpenv/v/bin/pip" --isolated --no-cache-dir install --upgrade pip setuptools
+
+  # I haven't found official docs on the layout created by `pip install --target`.
+  echo >&2 "Installing pipx"
+  "$tmpenv/v/bin/pip" --isolated --no-cache-dir install --target "$destination/misc/pipxbase" pipx
+  rm -rf "$tmpenv"
+
+  # The bins have a shebang from $tmpenv and they don't know where to find
+  # libraries. Edit each bin to fix it. Huge hack!
+  echo >&2 "Editing bin scripts"
+  env -C "$destination" /usr/bin/python3 -c 'if True:
+    import os, sys, pathlib
+    for p in pathlib.Path("misc/pipxbase/bin").iterdir():
+      with p.open() as f: lines = f.read().split("\n")
+      assert lines[0].startswith("#!")
+      assert "import sys" in lines
+      lines[0] = "#!" + sys.executable
+      lines[lines.index("import sys")] += """; import os; sys.path[0] = os.path.join(sys.path[0], "..")"""
+      with p.open("w") as f: f.write("\n".join(lines))
+  '
+
+  local old=$PWD
+  cd "$destination/bin"
+  ln -s ../misc/pipxbase/bin/* .
+  cd "$old"
+}
+
 normalize_packages () {
   for pkg in "${packages[@]}"; do
     case "$pkg" in
