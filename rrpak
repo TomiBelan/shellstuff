@@ -99,6 +99,12 @@ install_micro () {
   # The tarball also contains LICENSE, LICENSE-THIRD-PARTY, README.md, micro.1, micro.desktop, micro.svg.
 }
 
+install_shellcheck () {
+  mkdir -p "$destination/bin"
+  wrapcurl "https://github.com/koalaman/shellcheck/releases/download/stable/shellcheck-stable.linux.x86_64.tar.xz" | tar -xJ --strip-components=1 -C "$destination/bin" "shellcheck-stable/shellcheck"
+  # The tarball also contains LICENSE.txt, README.txt.
+}
+
 install_pipx () {
   # TODO: It is almost possible to delete this now and use 'pip.pipx' instead.
   # The only slight difference is how pipx selects the default interpreter
