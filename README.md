@@ -75,3 +75,19 @@ Consequences:
 On Debian and Ubuntu, the default /etc/skel/.bashrc sets HISTSIZE=1000 and HISTFILESIZE=2000. This irritates me because I originally wanted to keep .bashrc completely clean of any modifications, and put all my custom stuff in .bash_aliases, which is sourced by it. But setting a bigger HISTFILESIZE in .bash_aliases is too late: ~/.bash_history is already truncated. On Fedora, the default [/etc/profile](https://pagure.io/setup/blob/c01ca2665ab3ab95e9569083c3e3011ec312a6ca/f/profile) only sets (and exports) HISTSIZE=1000, and /etc/skel/.bashrc sets neither. That's better. An ideal distribution would set HISTSIZE to some larger number (without export) in /etc/bash.bashrc.
 
 For now, my commonbashrc.sh also sets HISTFILE to ~/.bash_history2. This is to protect it from accidental truncation if you run `bash --norc` (because it defaults to 500) or if something somehow leads to running the default Debian .bashrc. Back when sudo didn't reset $HOME in [old versions of Ubuntu](https://askubuntu.com/questions/1186999/how-does-sudo-handle-home-differently-since-19-10), I suspect that could somehow cause accidental truncation too. But I'm not sure if I'm a fan. Using a custom filename feels ugly and inelegant. We'll see.
+
+### How to get the current filename in a sourced script
+
+The answer is `${BASH_SOURCE[0]}`.
+
+I hesitated because [bash(1)](https://man.archlinux.org/man/bash.1) describes BASH_SOURCE like this: "An array variable whose members are the source filenames where the corresponding shell function names in the `FUNCNAME` array variable are defined. The shell function `${FUNCNAME[$i]}` is defined in the file `${BASH_SOURCE[$i]}` and called from `${BASH_SOURCE[$i+1]}`."
+
+This confused me because I'm not inside a shell function. And it sounded like BASH_SOURCE always has the same length as FUNCNAME, but FUNCNAME was empty.
+
+The man page is wrong. BASH_SOURCE is not just for functions, but also sourced scripts and the main script (if any). This is used by many existing scripts and also in some places in bash itself, so it is unlikely to change even though it is technically undocumented. And FUNCNAME internally stores data, but it appears empty if you read it outside of a function.
+
+Example: If you run `bash a.sh` which sources `b.sh` which defines and calls `fn`, you'll get `BASH_SOURCE=([0]="./b.sh" [1]="./b.sh" [2]="a.sh")` and `FUNCNAME=([0]="fn" [1]="source" [2]="main")`. Outside of `fn`, FUNCNAME secretly contains `("source" "main")` but appears empty.
+
+`${BASH_ARGV[0]}` also works... sometimes. I'll attempt to describe how it really works. BASH_ARGV is a stack and 0 is the top. Initially the main script's arguments are pushed, regardless of extdebug. `source file.sh` pushes the filename `file.sh`, regardless of extdebug, but only if there are no arguments. `source file.sh x y` pushes x, y if extdebug is enabled, otherwise nothing. `func x y` pushes x, y if extdebug is enabled, otherwise nothing. Conclusion: Let's stay with BASH_SOURCE.
+
+The path in `${BASH_SOURCE[0]}` (and `${BASH_ARGV[0]}`) will be absolute if `source` had to look it up on $PATH. Otherwise it will be exactly as it was given to `source` and may be relative.
