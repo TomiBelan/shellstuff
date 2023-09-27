@@ -154,7 +154,27 @@ type nano &>/dev/null && export EDITOR=nano
 
 # Override PROMPT_COMMAND if it was set by some earlier script.
 # __debugtrap assumes the only value will be __rrprompt.
-[[ "$PROMPT_COMMAND" ]] && echo >&2 "overriding PROMPT_COMMAND [$PROMPT_COMMAND]"
+#
+# Warn the user (to be safe just in case, and to be polite). But ignore known
+# common values of PROMPT_COMMAND from distro /etc/ files.
+#
+# Fedora: https://pagure.io/setup/blob/master/f/bashrc
+# Arch: https://gitlab.archlinux.org/archlinux/packaging/packages/bash/-/blob/main/system.bashrc
+# Debian/Ubuntu: just a comment in https://sources.debian.org/src/bash/latest/debian/etc.bash.bashrc/
+# Gentoo: just a comment in https://gitweb.gentoo.org/repo/gentoo.git/tree/app-shells/bash/files/bashrc
+# VTE: https://gitlab.gnome.org/GNOME/vte/-/blob/master/src/vte.sh.in
+for __shellstuff_i in "${PROMPT_COMMAND[@]}"; do
+  [[ $__shellstuff_i == "" ]] && continue
+  [[ $__shellstuff_i =~ ^/etc/sysconfig/bash-prompt-[a-z]+$ ]] && continue
+  [[ $__shellstuff_i =~ ^printf( \"[!-~]+\")+$ ]] && continue
+  [[ $__shellstuff_i == __vte_osc7 ]] && continue
+  [[ $__shellstuff_i == __vte_prompt_command ]] && continue
+  [[ $__shellstuff_i == __rrprompt ]] && continue  # if `source ~/.bashrc`
+  echo >&2 "warning: overriding PROMPT_COMMAND [${PROMPT_COMMAND[@]@Q}]"
+  break
+done
+unset __shellstuff_i
+
 PROMPT_COMMAND=()
 
 source "$__shellstuff_dir/rrprompt.sh"
