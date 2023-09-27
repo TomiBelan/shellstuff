@@ -365,10 +365,19 @@ case "$cmd" in
       localargs+=("$1")
       shift
     done
+    shift
+    if [ "${1:-}" == "" ]; then
+      echo >&2 "Error: Missing program name after the '--' argument to rrpak run"
+      usage 1
+    fi
+    if [[ "${1:-}" == -* ]]; then
+      # Could be interpreted as an option for `exec`.
+      echo >&2 "Error: The argument after '--' does not look like a program name"
+      usage 1
+    fi
     code=$("$0" internal-local "${localargs[@]}")
     eval "$code"
-    shift
-    "$@"
+    exec "$@"
     ;;
 
   local)
