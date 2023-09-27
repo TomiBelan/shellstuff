@@ -22,7 +22,9 @@ Installation:
    source ~/shellstuff/commonbashrc.sh
    ```
 
-Customize the prompt color by adding e.g. `SHELLSTUFF_PROMPT_COLOR=47` to ~/.bashrc.
+Customization:
+
+You can change the main prompt color by adding e.g. `RRPROMPT_COLOR=47` to ~/.bashrc. See rrprompt.sh for more.
 
 <details><summary>Expected hashes of /etc/skel/.bashrc</summary>
 
@@ -37,6 +39,16 @@ Just to be safe, here are the most recent versions of /etc/skel/.bashrc in vario
 | Gentoo       | e280e34af6e830c93adb6285f66ead4812ddfb2bbc6a7ff618467f4c933f6446 | [2015-08-08](https://gitweb.gentoo.org/repo/gentoo.git/tree/app-shells/bash/files/dot-bashrc?id=56bd759df1d0c750a065b8c845e93d5dfa6b549d) | [link](https://gitweb.gentoo.org/repo/gentoo.git/tree/app-shells/bash/files/dot-bashrc)       |
 
 </details>
+
+## rrprompt.sh
+
+This is my bash prompt. It is a part of commonbashrc.sh, but it can also be used on its own. Just download rrprompt.sh and `source` it in your ~/.bashrc.
+
+Its main attraction is that the whole line is highlighted with a background color, not just the prompt but also the command area where you type. The highlight makes it very easy to see where commands begin and end.
+
+Other than that, it's a pretty minimal one-line prompt. There is no version control integration, memory usage, battery level, weather, etc.
+
+For comparison, [this page](https://liquidprompt.readthedocs.io/en/latest/overview.html#competitors) looks like a decent overview of the competition.
 
 ## Explanations
 

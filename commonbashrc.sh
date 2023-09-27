@@ -152,6 +152,11 @@ type nano &>/dev/null && export EDITOR=nano
 
 # ----- PROMPT AND WINDOW TITLE ------------------------------------------------
 
+# Override PROMPT_COMMAND if it was set by some earlier script.
+# __debugtrap assumes the only value will be __rrprompt.
+[[ "$PROMPT_COMMAND" ]] && echo >&2 "overriding PROMPT_COMMAND [$PROMPT_COMMAND]"
+PROMPT_COMMAND=()
+
 source "$__shellstuff_dir/rrprompt.sh"
 
 __debugtrap () {
@@ -159,15 +164,13 @@ __debugtrap () {
   [ -n "$READLINE_LINE" ] && return 0
 
   # this runs
-  # - before showing prompt (BASH_COMMAND is __prompt)
+  # - before showing prompt (BASH_COMMAND is __rrprompt)
   # - before each of aa, bb, cc if the user executes "aa; bb; cc"
   # - not at all before "(aa; bb; cc)" (I don't like the functrace+extdebug hack)
 
   # show window title.
-  if [[ -t 1 ]] && [[ $TERM == xterm* ]]; then
-    local c="$BASH_COMMAND @ "
-    [[ $BASH_COMMAND == __prompt ]] && c=''
-    echo -n $'\e]0;'"$c${HOSTNAME%%.*}:${PWD/#$HOME/'~'}"$'\a'
+  if [[ -t 2 ]] && [[ $RRPROMPT_TITLE ]] && [[ $BASH_COMMAND != __rrprompt ]]; then
+    printf '%s' "${RRPROMPT_TITLE_PREFIX@P}$BASH_COMMAND @ ${RRPROMPT_TITLE@P}${RRPROMPT_TITLE_SUFFIX@P}" >&2
   fi
 
   # if enabled, save each command to the history file immediately (before running it).
@@ -175,7 +178,7 @@ __debugtrap () {
 
   # send history information to historywriter.
   local etype=run
-  [[ "$BASH_COMMAND" == "__prompt" ]] && etype=end
+  [[ "$BASH_COMMAND" == "__rrprompt" ]] && etype=end
   [ "$HISTFILE" ] && [ "$__history_shellid" ] && __history_write "$etype" "$1"
   return 0
 }
