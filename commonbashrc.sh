@@ -147,8 +147,7 @@ export PS_FORMAT=pid,user,tname,start_time,args
 
 type nano &>/dev/null && export EDITOR=nano
 
-[ -d ~/Sync/dotfiles/bin ] && [[ $PATH != *Sync/dotfiles/bin* ]] && export PATH="$HOME/Sync/dotfiles/bin-$HOSTNAME:$HOME/Sync/dotfiles/bin:$PATH"
-[ -d ~/.bin ] && [[ $PATH != *"$HOME/.bin"* ]] && export PATH="$HOME/.bin:$PATH"
+[[ ":$PATH:" == *":$HOME/.local/bin:"* ]] || PATH=$HOME/.local/bin:$PATH
 
 # ----- PROMPT AND WINDOW TITLE ------------------------------------------------
 
