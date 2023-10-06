@@ -1,21 +1,41 @@
 #!/bin/bash
 
 set -e -u -o pipefail
+shopt -s nullglob
 
-self=$(readlink -fv "$0")
+config_path=${RRPAK_CONF:-${XDG_CONFIG_HOME:-~/.config}/rrpak/rrpak.conf}
 
-localcache=${HOME:?"HOME missing"}/.cache/rrpak-local
-updateconf=${RRPAK_UPDATE_CONF:-${XDG_CONFIG_HOME:-$HOME/.config}/rrpak-update.conf}
+# helper variables for use in the config file
+declare -i second=1
+declare -i minute=$((60*second))
+declare -i hour=$((60*minute))
+declare -i day=$((24*hour))
+declare -i week=$((7*day))
+
+declare -i rrpak_permanentenv_remind_after rrpak_local_max_reuse_age rrpak_local_max_shell_life
+
+# default config values
+rrpak_permanentenv_path=~/.rrpak
+rrpak_permanentenv_backups=
+rrpak_permanentenv_packages=()
+rrpak_permanentenv_remind_after=$((40*day))
+rrpak_local_cache_path=${XDG_CACHE_HOME:-~/.cache}/rrpak
+rrpak_local_max_reuse_age=$((15*day))
+rrpak_local_max_shell_life=$((20*day))
+
+if [[ -e "$config_path" ]]; then
+  source "$config_path"
+fi
 
 usage () {
   echo >&2 "Usage:
   rrpak update
   rrpak run [--old|--new] PACKAGE... -- PROGRAM ARGS...
   rrpak local [--old|--new] PACKAGE...
-  rrpak clean [--force]
+  rrpak clean [--force] [--nonblock]
   rrpak build OUT-DIR PACKAGE...
   rrpak hook"
-  exit $1
+  exit "$1"
 }
 
 wrapcurl () {
@@ -178,7 +198,12 @@ do_build () {
     exit 1
   fi
 
-  mkdir "$destination"
+  for _ in "$destination"/*; do
+    echo >&2 "error: '$destination' is not empty"
+    exit 1
+  done
+
+  mkdir -p "$destination"
   touch "$destination/rc"
 
   condapackages=()
@@ -280,18 +305,6 @@ do_build () {
   done
 }
 
-load_updateconf () {
-  # default config values
-  destination=$HOME/.rrpak
-  backups=
-  packages=()
-  remind='40 days hence'
-
-  if [ -e "$updateconf" ]; then
-    source "$updateconf"
-  fi
-}
-
 (( $# == 0 )) && usage 0
 
 cmd=$1
@@ -300,7 +313,7 @@ case "$cmd" in
   hook)
     [ "$#" != 0 ] && usage 1
 
-    load_updateconf
+    self=$(readlink -fv "$0")
 
     echo 'rrpak () {'
     echo '  if [ "$1" == "local" ]; then'
@@ -313,7 +326,7 @@ case "$cmd" in
     echo '  fi'
     echo '}'
 
-    rc=$destination/rc
+    rc=$rrpak_permanentenv_path/rc
     echo
     echo "[ -f ${rc@Q} ] && source ${rc@Q} || true"
     ;;
@@ -321,27 +334,28 @@ case "$cmd" in
   update)
     [ "$#" != 0 ] && usage 1
 
-    if ! [ -e "$updateconf" ]; then
-      echo >&2 "Create '$updateconf' with: packages=(foo bar)"
+    if ! [[ -e "$config_path" ]]; then
+      echo >&2 "Create '$config_path' with: rrpak_permanentenv_packages=(foo bar)"
       exit 1
     fi
-    load_updateconf
-    if [ "${#packages[@]}" == 0 ]; then
-      echo >&2 "No packages set. Write in '$updateconf': packages=(foo bar)"
+    if [[ "${#rrpak_permanentenv_packages[@]}" == 0 ]]; then
+      echo >&2 "No packages set. Put this in '$config_path': rrpak_permanentenv_packages=(foo bar)"
       exit 1
     fi
-    if [ -e "$destination" ]; then
-      if [ "$backups" == "no" ]; then
-        rm -rf "$destination"
+    if [[ -e "$rrpak_permanentenv_path" ]]; then
+      if [[ "$rrpak_permanentenv_backups" == "no" ]]; then
+        rm -rf "$rrpak_permanentenv_path"
       else
-        backuptemp=$(mktemp -d --tmpdir"${backups:+=}$backups" "rrpak-update-$EPOCHSECONDS.XXXXXXXXXX")
-        mv "$destination" "$backuptemp/oldbackup"
+        backuptemp=$(mktemp -d --tmpdir"${rrpak_permanentenv_backups:+=}$rrpak_permanentenv_backups" "rrpak-update-$EPOCHSECONDS.XXXXXXXXXX")
+        mv "$rrpak_permanentenv_path" "$backuptemp/oldbackup"
       fi
     fi
-    "$0" build "$destination" "${packages[@]}"
-    if [ "$remind" != "" ] && [ "$remind" != "no" ]; then
-      expire=$(date +%s -d "$remind")
-      echo "(( EPOCHSECONDS > $expire )) && echo >&2 \"It's been a long time since 'rrpak update'. When you have time, run it again.\"" >> "$destination/rc"
+    "$0" build "$rrpak_permanentenv_path" "${rrpak_permanentenv_packages[@]}"
+    if (( rrpak_permanentenv_remind_after != 0 )); then
+      code="if (( EPOCHSECONDS > $(( EPOCHSECONDS + rrpak_permanentenv_remind_after )) )); then"
+      code+=$'\n  echo "It\'s been a long time since \'rrpak update\'. When you have time, run it again."'
+      code+=$'\nfi'
+      echo "$code" >> "$rrpak_permanentenv_path/rc"
     fi
     "$0" clean
     ;;
@@ -371,13 +385,14 @@ case "$cmd" in
       usage 1
     fi
     if [[ "${1:-}" == -* ]]; then
-      # Could be interpreted as an option for `exec`.
+      # Could be interpreted as an option for `exec` or `flock`.
       echo >&2 "Error: The argument after '--' does not look like a program name"
       usage 1
     fi
-    code=$("$0" internal-local "${localargs[@]}")
+    unset runlock_path
+    code=$(RRPAK_IN_RUN=t "$0" internal-local "${localargs[@]}")
     eval "$code"
-    exec "$@"
+    exec flock -s "$runlock_path" "$@"
     ;;
 
   local)
@@ -395,39 +410,94 @@ case "$cmd" in
     fi
     packages=("$@")
     normalize_packages
+
     if [ "$opt" != "--old" ]; then
-      "$0" clean
+      "$0" clean --nonblock
     fi
-    destination=$localcache/$(printf '%s\n' "${packages[@]}" | sort -u | sha256sum | cut -d' ' -f1).rrpak
-    mkdir -p "$localcache"
-    if [ "$opt" == "--new" ]; then
-      rm -rf "$destination"
-    fi
-    if ! [ -e "$destination" ]; then
-      if [ "$opt" == "--old" ]; then
-        echo >&2 "Error: This package list is not in the cache. Try again without --old."
-        exit 1
+    mkdir -p "$rrpak_local_cache_path"
+    flock -s "$rrpak_local_cache_path" "$0" internal-local-locked "$opt" "${packages[@]}"
+    ;;
+
+  internal-local-locked)
+    opt=$1
+    shift
+    packages=("$@")
+
+    symlink=latest.$(printf '%s\n' "${packages[@]}" | sha256sum | cut -d' ' -f1).rrpak
+
+    if [[ "$opt" == "--new" ]]; then
+      destination=
+    else
+      oldversion=$(readlink -s "$rrpak_local_cache_path/$symlink" || true)
+      destination="$rrpak_local_cache_path/$oldversion"
+      created=$(stat -c %Y "$rrpak_local_cache_path/$oldversion/created" 2>/dev/null || true)
+      if [[ "$opt" == "--old" ]]; then
+        if [[ "$oldversion" == "" ]] || [[ "$created" == "" ]]; then
+          echo >&2 "Error: This package list is not in the cache. Try again without --old."
+          exit 1
+        fi
+      else
+        if [[ "$created" == "" ]] || (( EPOCHSECONDS - created > rrpak_local_max_reuse_age )); then
+          destination=
+        fi
       fi
+    fi
+
+    if [[ "$destination" == "" ]]; then
+      destination=$(mktemp -d -p "$rrpak_local_cache_path" env.XXXXXXXXXX.rrpak)
+
       echo >&2 "Installing ${packages[*]} to $destination..."
       do_build
+      touch "$destination/created" "$destination/runlock"
+      ln -sfT "${destination##*/}" "$rrpak_local_cache_path/$symlink"
       echo >&2 "Done."
-      echo "$(( EPOCHSECONDS + 30 * 24 * 3600 ))" > "$destination/expire"
     fi
-    rc=$destination/rc
+
+    touch "$destination/used"
+    rc="$destination/rc"
+    runlock_path="$destination/runlock"
+    if [[ -n "${RRPAK_IN_RUN:-}" ]]; then
+      echo >&9 "runlock_path=${runlock_path@Q}"
+    fi
     echo >&9 "source ${rc@Q}"
     ;;
 
   clean)
     force=
-    [ "${1:-}" == "--force" ] && shift && force=t
-    [ "$#" != 0 ] && usage 1
+    flockargs=()
+    for arg; do
+      case "$arg" in
+        --force) force=t;;
+        --nonblock) flockargs=(-n -E0);;
+        *) usage 1;;
+      esac
+    done
+    # Lock it only if the cache exists and contains something.
+    entries=("$rrpak_local_cache_path"/*.rrpak)
+    if [[ "${#entries[@]}" != 0 ]]; then
+      exec flock "${flockargs[@]}" "$rrpak_local_cache_path" "$0" internal-clean-locked "$force"
+    fi
+    ;;
+
+  internal-clean-locked)
+    force="$1"
     now=$EPOCHSECONDS
-    shopt -s nullglob
-    for dir in "$localcache"/*.rrpak; do
-      if [ "$force" == "" ] && [ -e "$dir/expire" ] && (( $(< "$dir/expire") > now )); then
+    for dir in "$rrpak_local_cache_path"/env.*.rrpak; do
+      if [[ -n "$force" ]]; then
+        rm -rf "$dir"
+      elif [[ -e "$dir/used" ]] && (( now - $(stat -c %Y "$dir/used" 2>/dev/null || true) < rrpak_local_max_shell_life )); then
         true
+      elif [[ -e "$dir/runlock" ]]; then
+        flock -n -E0 "$dir/runlock" rm -rf "$dir"
       else
         rm -rf "$dir"
+      fi
+    done
+    for sym in "$rrpak_local_cache_path"/latest.*.rrpak; do
+      if [[ "$force" == "" ]] && [[ -e "$sym/used" ]]; then
+        true
+      else
+        rm -f "$sym"
       fi
     done
     ;;
