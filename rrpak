@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2016,SC2250
 
 set -e -u -o pipefail
 shopt -s nullglob
@@ -10,6 +11,7 @@ declare -i second=1
 declare -i minute=$((60*second))
 declare -i hour=$((60*minute))
 declare -i day=$((24*hour))
+# shellcheck disable=SC2034
 declare -i week=$((7*day))
 
 declare -i rrpak_permanentenv_remind_after rrpak_local_max_reuse_age rrpak_local_max_shell_life
@@ -24,6 +26,7 @@ rrpak_local_max_reuse_age=$((15*day))
 rrpak_local_max_shell_life=$((20*day))
 
 if [[ -e "$config_path" ]]; then
+  # shellcheck source=/dev/null
   source "$config_path"
 fi
 
@@ -39,8 +42,10 @@ usage () {
 }
 
 wrapcurl () {
-  echo >&2 "Downloading ${@: -1}"
-  curl -fL $([[ -t 2 ]] && echo -#) "$@" && true
+  echo >&2 "Downloading ${*: -1}"
+  local curlopt=-fL
+  [[ -t 2 ]] && curlopt+='#'
+  curl "$curlopt" "$@" && true
   case "$?" in
   0) true;;
   23) echo >&2 "Ignoring curl error";;  # Can happen with "grep -m1". See https://stackoverflow.com/a/28879552
@@ -178,18 +183,16 @@ normalize_packages () {
       conda.*) ;;
       pip.*) ;;
       *)
-        if [ "$(type -t "install_$pkg" 2>/dev/null)" != function ]; then
+        if [ "$(type -t "install_$pkg" 2>/dev/null || true)" != function ]; then
           echo >&2 "Unknown package '$pkg'"
           exit 1
         fi
         ;;
     esac
   done
-  local oldIFS="$IFS"
-  IFS=$'\n'
-  local tmp="$(printf '%s\n' "${packages[@]}" | sort -u)"
-  packages=($tmp)
-  IFS=$oldIFS
+  local tmp
+  tmp=$(printf '%s\n' "${packages[@]}" | sort -u)
+  mapfile -t packages <<< "$tmp"
 }
 
 do_build () {
