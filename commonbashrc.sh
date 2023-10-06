@@ -149,6 +149,10 @@ type nano &>/dev/null && export EDITOR=nano
 
 [[ ":$PATH:" == *":$HOME/.local/bin:"* ]] || PATH=$HOME/.local/bin:$PATH
 
+# ----- RRPAK ------------------------------------------------------------------
+
+eval "$("$__shellstuff_dir/rrpak" hook)"
+
 # ----- PROMPT AND WINDOW TITLE ------------------------------------------------
 
 # Override PROMPT_COMMAND if it was set by some earlier script.
