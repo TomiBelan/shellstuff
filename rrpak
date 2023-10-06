@@ -17,6 +17,7 @@ declare -i week=$((7*day))
 declare -i rrpak_permanentenv_remind_after rrpak_local_max_reuse_age rrpak_local_max_shell_life
 
 # default config values
+rrpak_hook_aliases=()
 rrpak_permanentenv_path=~/.rrpak
 rrpak_permanentenv_backups=
 rrpak_permanentenv_packages=()
@@ -356,6 +357,18 @@ case "$cmd" in
     echo '  fi'
     echo '}'
 
+    for pkg in "${rrpak_hook_aliases[@]}"; do
+      bins=("${pkg#*.}")
+      case "$pkg" in
+        age) bins=(age age-keygen);;
+        ripgrep) bins=(rg);;
+        *) ;;
+      esac
+      for bin in "${bins[@]}"; do
+        echo "alias $bin='rrpak run $pkg -- $bin'"
+      done
+    done
+
     rc=$rrpak_permanentenv_path/rc
     echo
     echo "[ -f ${rc@Q} ] && source ${rc@Q} || true"
@@ -366,10 +379,16 @@ case "$cmd" in
 
     if ! [[ -e "$config_path" ]]; then
       echo >&2 "rrpak: Create '$config_path' with: rrpak_permanentenv_packages=(foo bar)"
+      if [[ -e "$rrpak_permanentenv_path" ]]; then
+        echo >&2 "rrpak: If you don't need '$rrpak_permanentenv_path' anymore, you can delete it: rm -rf ${rrpak_permanentenv_path@Q}"
+      fi
       exit 1
     fi
     if [[ "${#rrpak_permanentenv_packages[@]}" == 0 ]]; then
       echo >&2 "rrpak: No packages set. Put this in '$config_path': rrpak_permanentenv_packages=(foo bar)"
+      if [[ -e "$rrpak_permanentenv_path" ]]; then
+        echo >&2 "rrpak: If you don't need '$rrpak_permanentenv_path' anymore, you can delete it: rm -rf ${rrpak_permanentenv_path@Q}"
+      fi
       exit 1
     fi
     if [[ -e "$rrpak_permanentenv_path" ]]; then
