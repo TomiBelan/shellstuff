@@ -41,11 +41,19 @@ usage () {
   exit "$1"
 }
 
-wrapcurl () {
-  echo >&2 "Downloading ${*: -1}"
+download () {
+  mkdir unpacked
+  echo >&2 "Downloading $1"
   local curlopt=--no-progress-meter
   [[ -t 2 ]] && curlopt=-#
-  curl -fL "$curlopt" "$@"
+  curl -fL "$curlopt" "$1" | tar -x "$2" -C unpacked
+}
+
+clean_up_unpacked () {
+  if [[ -d unpacked ]]; then
+    find unpacked '!' -type d -exec echo "rrpak: error: Unexpected file left behind after unpacking:" '{}' ';' >&2
+    find unpacked -type d -delete
+  fi
 }
 
 wrapgrep () {
@@ -53,7 +61,7 @@ wrapgrep () {
   (( "$?" < 2 ))  # 0 and 1 are good exit codes
 }
 
-find_latest () {
+download_latest () {
   # Directly piping 'curl | grep -m 1' would save some download time, but curl complains about
   # "curl: (23) Failure writing output to destination". We'd need to special case $? == 23, and it
   # still prints to stderr which looks a bit ugly. See also https://stackoverflow.com/a/28879552
@@ -68,14 +76,14 @@ find_latest () {
     echo >&2 "rrpak: error: Unable to determine latest version of $1"
     exit 1
   fi
-  latest_filename=$ver
-  latest_url="https://github.com/$1/releases/latest/download/$ver"
+  download "https://github.com/$1/releases/latest/download/$ver" "$3"
 }
 
 put_micromamba_in_misc () {
   mkdir -p misc
-  wrapcurl 'https://micro.mamba.pm/api/micromamba/linux-64/latest' | tar -xj --strip-components=1 -C ./misc bin/micromamba
-  # The tarball also contains info/ with licenses and build info jsons. Probably not needed.
+  download 'https://micro.mamba.pm/api/micromamba/linux-64/latest' --bzip2
+  mv unpacked/bin/micromamba misc/micromamba
+  rm -rf unpacked/info  # Contains licenses and various build info. Probably not needed.
 }
 
 install_micromamba () {
@@ -90,46 +98,51 @@ install_micromamba () {
 
 install_age () {
   mkdir -p bin
-  wrapcurl 'https://dl.filippo.io/age/latest?for=linux/amd64' | tar -xz --strip-components=1 -C ./bin age/age age/age-keygen
-  # The tarball also contains age/LICENSE.
+  download 'https://dl.filippo.io/age/latest?for=linux/amd64' -z
+  mv unpacked/age/{age,age-keygen} bin/
+  rm unpacked/age/LICENSE
 }
 
 install_gh () {
-  mkdir -p bin
-  find_latest cli/cli '"gh[^"]*linux_amd64.tar.gz"'
-  wrapcurl "$latest_url" | tar -xz --strip-components=2 -C ./bin "${latest_filename%.tar.gz}/bin/gh"
-  # The tarball also contains gh_*/share/man. Probably not needed.
+  mkdir -p bin man/man1
+  download_latest cli/cli '"gh[^"]*linux_amd64.tar.gz"' -z
+  mv unpacked/gh*/bin/gh bin/
+  mv unpacked/gh*/share/man/man1/* man/man1/
+  rm unpacked/gh*/LICENSE
 }
 
 install_lf () {
   mkdir -p bin misc
-  wrapcurl 'https://github.com/gokcehan/lf/releases/latest/download/lf-linux-amd64.tar.gz' | tar -xz -C ./misc lf
+  download 'https://github.com/gokcehan/lf/releases/latest/download/lf-linux-amd64.tar.gz' -z
+  mv unpacked/lf misc/
   echo $'#!/bin/bash\nexec "$(dirname "$0")/../misc/lf" -single "$@"' > bin/lf
   chmod a+x bin/lf
 }
 
 install_ripgrep () {
-  mkdir -p bin misc ripgreptmp
-  find_latest BurntSushi/ripgrep '"ripgrep[^"]*x86_64-unknown-linux-musl.tar.gz"'
-  wrapcurl "$latest_url" | tar -xz --strip-components=1 -C ./ripgreptmp "${latest_filename%.tar.gz}/rg" "${latest_filename%.tar.gz}/complete/rg.bash"
-  mv ripgreptmp/rg bin/
-  mv ripgreptmp/complete/rg.bash misc/
-  rmdir ripgreptmp/complete
-  rmdir ripgreptmp
+  mkdir -p bin misc man/man1
+  download_latest BurntSushi/ripgrep '"ripgrep[^"]*x86_64-unknown-linux-musl.tar.gz"' -z
+  mv unpacked/ripgrep*/rg bin/
+  mv unpacked/ripgrep*/complete/rg.bash misc/
+  mv unpacked/ripgrep*/doc/rg.1 man/man1/
+  rm unpacked/ripgrep*/{doc/*.md,*.md,*LICENSE*,COPYING,complete/*}
   echo "source ${PWD@Q}/misc/rg.bash" >> rc
+  # TODO: maybe one day support the other completions? (fish, zsh, ps1)
 }
 
 install_micro () {
-  mkdir -p bin
-  find_latest zyedidia/micro '"micro[^"]*linux64.tar.gz"'
-  wrapcurl "$latest_url" | tar -xz --strip-components=1 -C ./bin "${latest_filename%-*.tar.gz}/micro"
-  # The tarball also contains LICENSE, LICENSE-THIRD-PARTY, README.md, micro.1, micro.desktop, micro.svg.
+  mkdir -p bin man/man1
+  download_latest zyedidia/micro '"micro[^"]*linux64.tar.gz"' -z
+  mv unpacked/micro*/micro bin/
+  mv unpacked/micro*/micro.1 man/man1/
+  rm unpacked/micro*/{LICENSE*,README.md,micro.desktop,micro.svg}
 }
 
 install_shellcheck () {
   mkdir -p bin
-  wrapcurl "https://github.com/koalaman/shellcheck/releases/download/stable/shellcheck-stable.linux.x86_64.tar.xz" | tar -xJ --strip-components=1 -C ./bin "shellcheck-stable/shellcheck"
-  # The tarball also contains LICENSE.txt, README.txt.
+  download 'https://github.com/koalaman/shellcheck/releases/download/stable/shellcheck-stable.linux.x86_64.tar.xz' --xz
+  mv unpacked/shellcheck-stable/shellcheck bin/
+  rm unpacked/shellcheck-stable/{LICENSE.txt,README.txt}
 }
 
 install_pipx () {
@@ -220,7 +233,7 @@ do_build () {
     case "$pkg" in
       conda.*) condapackages+=("${pkg#*.}");;
       pip.*) pippackages+=("${pkg#*.}");;
-      *) "install_$pkg";;
+      *) "install_$pkg"; clean_up_unpacked;;
     esac
   done
 
