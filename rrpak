@@ -80,9 +80,9 @@ download_latest () {
 }
 
 put_micromamba_in_misc () {
-  mkdir -p misc
+  mkdir -p misc/micromambabin
   download 'https://micro.mamba.pm/api/micromamba/linux-64/latest' --bzip2
-  mv unpacked/bin/micromamba misc/micromamba
+  mv unpacked/bin/micromamba misc/micromambabin/
   rm -rf unpacked/info  # Contains licenses and various build info. Probably not needed.
 }
 
@@ -91,7 +91,14 @@ install_micromamba () {
 
   # Skip '-s bash'. Micromamba will guess the shell by inspecting its PPID. This should allow ./rc to work with non-bash posix shells (disclaimer: never tested).
   # Work around https://github.com/mamba-org/mamba/issues/1748 and https://github.com/mamba-org/mamba/issues/2163.
-  echo "eval \"\$(${PWD@Q}/misc/micromamba shell hook | sed '/COMPREPLY/ s/.MAMBA_EXE/__mamba_exe/; /PATH.*condabin/ s/.*/true/')\"" >> rc
+  local mambasnippet=(
+    'if [ -n "${RRPAK_PREPARING_RUN:-}" ]; then'
+    '  PATH='"${PWD@Q}"'/misc/micromambabin:$PATH'
+    'else'
+    '  eval "$('"${PWD@Q}"'/misc/micromambabin/micromamba shell hook | sed '\''/COMPREPLY/ s/.MAMBA_EXE/__mamba_exe/; /PATH.*condabin/ s/.*/true/'\'')"'
+    'fi'
+  )
+  printf '%s\n' "${mambasnippet[@]}" >> rc
 
   # rrpak does not set MAMBA_ROOT_PREFIX. The user can set it if they want.
 }
@@ -240,7 +247,7 @@ do_build () {
   done
 
   if [ "${#condapackages[@]}" != 0 ]; then
-    if ! [[ -e misc/micromamba ]]; then
+    if ! [[ -e misc/micromambabin/micromamba ]]; then
       put_micromamba_in_misc
     fi
 
@@ -266,7 +273,7 @@ do_build () {
     mkdir menv menv/conda-meta
     touch menv/conda-meta/history
 
-    ./misc/micromamba --no-rc install -y -p ./menv -c conda-forge "${condapackages[@]}"
+    ./misc/micromambabin/micromamba --no-rc install -y -p ./menv -c conda-forge "${condapackages[@]}"
     # TODO: limited bin in path, with wrappers? probably later (if ever).
 
     rm -rf mpkgs
@@ -414,6 +421,8 @@ case "$cmd" in
     fi
     unset runlock_path
     code=$(RRPAK_IN_RUN=t "$0" internal-local "${localargs[@]}")
+    # shellcheck disable=SC2034
+    RRPAK_PREPARING_RUN=t
     eval "$code"
     exec flock -s "$runlock_path" "$@"
     ;;
