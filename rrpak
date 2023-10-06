@@ -43,7 +43,7 @@ usage () {
 
 download () {
   mkdir unpacked
-  echo >&2 "Downloading $1"
+  echo >&2 "rrpak: Downloading $1"
   local curlopt=--no-progress-meter
   [[ -t 2 ]] && curlopt=-#
   curl -fL "$curlopt" "$1" | tar -x "$2" -C unpacked
@@ -67,7 +67,7 @@ download_latest () {
   # still prints to stderr which looks a bit ugly. See also https://stackoverflow.com/a/28879552
   local url="https://api.github.com/repos/$1/releases/latest"
   local ver
-  echo >&2 "Discovering $url"
+  echo >&2 "rrpak: Discovering $url"
   ver=$(curl -fLsS "$url")
   ver=$(wrapgrep -o -m 1 "$2" <<< "$ver")
   ver=${ver#'"'}
@@ -158,22 +158,22 @@ install_pipx () {
   mkdir -p misc bin
 
   # The temporary venv is used just to make it work without systemwide pip.
-  echo >&2 "Creating temporary venv"
+  echo >&2 "rrpak: Creating temporary venv"
   /usr/bin/python3 -m venv pipx_tmp_pip_env
 
   # This is what `-m venv --upgrade-deps` would do. See venv/__init__.py.
-  echo >&2 "Upgrading pip, setuptools"
+  echo >&2 "rrpak: Upgrading pip, setuptools"
   pipx_tmp_pip_env/bin/pip --isolated --no-cache-dir install --upgrade pip setuptools
 
   # I haven't found official docs on the layout created by `pip install --target`.
-  echo >&2 "Installing pipx"
+  echo >&2 "rrpak: Installing pipx"
   pipx_tmp_pip_env/bin/pip --isolated --no-cache-dir install --target ./misc/pipxbase pipx
 
   rm -rf pipx_tmp_pip_env
 
   # The bins have a shebang from pipx_tmp_pip_env and they don't know where to
   # find libraries. Edit each bin to fix it. Huge hack!
-  echo >&2 "Editing bin scripts"
+  echo >&2 "rrpak: Editing bin scripts"
   /usr/bin/python3 -c 'if True:
     import os, sys, pathlib
     for p in pathlib.Path("misc/pipxbase/bin").iterdir():
@@ -195,9 +195,10 @@ normalize_packages () {
     case "$pkg" in
       conda.*) ;;
       pip.*) ;;
+      -*) usage 1;;
       *)
         if [ "$(type -t "install_$pkg" 2>/dev/null || true)" != function ]; then
-          echo >&2 "Unknown package '$pkg'"
+          echo >&2 "rrpak: error: Unknown package '$pkg'"
           exit 1
         fi
         ;;
@@ -206,16 +207,17 @@ normalize_packages () {
   local tmp
   tmp=$(printf '%s\n' "${packages[@]}" | sort -u)
   mapfile -t packages <<< "$tmp"
+  if [[ "$tmp" == "" ]]; then packages=(); fi
 }
 
 do_build () {
   if [ "${destination:0:1}" != "/" ]; then
-    echo >&2 "Internal error: '$destination' should be absolute"
+    echo >&2 "rrpak: internal error: '$destination' should be absolute"
     exit 1
   fi
 
   for _ in "$destination"/*; do
-    echo >&2 "error: '$destination' is not empty"
+    echo >&2 "rrpak: error: '$destination' is not empty"
     exit 1
   done
 
@@ -276,11 +278,11 @@ do_build () {
     elif [ -f /usr/bin/python3 ]; then
       py=/usr/bin/python3
     else
-      echo >&2 "rrpak error: /usr/bin/python3 not found"
+      echo >&2 "rrpak: error: /usr/bin/python3 not found"
       false
     fi
 
-    echo >&2 "Installing $pkg with pip in $destination/venv-$pkg using $py"
+    echo >&2 "rrpak: Installing $pkg to $destination/venv-$pkg using pip and $py"
     "$py" -m venv --upgrade-deps "venv-$pkg"
     existingbins=("venv-$pkg/bin"/*)
     "venv-$pkg/bin/pip" install "$pkg"
@@ -356,11 +358,11 @@ case "$cmd" in
     [ "$#" != 0 ] && usage 1
 
     if ! [[ -e "$config_path" ]]; then
-      echo >&2 "Create '$config_path' with: rrpak_permanentenv_packages=(foo bar)"
+      echo >&2 "rrpak: Create '$config_path' with: rrpak_permanentenv_packages=(foo bar)"
       exit 1
     fi
     if [[ "${#rrpak_permanentenv_packages[@]}" == 0 ]]; then
-      echo >&2 "No packages set. Put this in '$config_path': rrpak_permanentenv_packages=(foo bar)"
+      echo >&2 "rrpak: No packages set. Put this in '$config_path': rrpak_permanentenv_packages=(foo bar)"
       exit 1
     fi
     if [[ -e "$rrpak_permanentenv_path" ]]; then
@@ -374,7 +376,7 @@ case "$cmd" in
     "$0" build "$rrpak_permanentenv_path" "${rrpak_permanentenv_packages[@]}"
     if (( rrpak_permanentenv_remind_after != 0 )); then
       code="if (( EPOCHSECONDS > $(( EPOCHSECONDS + rrpak_permanentenv_remind_after )) )); then"
-      code+=$'\n  echo "It\'s been a long time since \'rrpak update\'. When you have time, run it again."'
+      code+=$'\n  echo >&2 "rrpak: It\'s been a long time since \'rrpak update\'. When you have time, run it again."'
       code+=$'\nfi'
       echo "$code" >> "$rrpak_permanentenv_path/rc"
     fi
@@ -394,7 +396,7 @@ case "$cmd" in
     localargs=()
     while [ "${1:-}" != "--" ]; do
       if [ "$#" == 0 ]; then
-        echo >&2 "Error: Missing '--' argument to rrpak run"
+        echo >&2 "rrpak: error: Missing '--' argument to rrpak run"
         usage 1
       fi
       localargs+=("$1")
@@ -402,12 +404,12 @@ case "$cmd" in
     done
     shift
     if [ "${1:-}" == "" ]; then
-      echo >&2 "Error: Missing program name after the '--' argument to rrpak run"
+      echo >&2 "rrpak: error: Missing program name after the '--' argument to rrpak run"
       usage 1
     fi
     if [[ "${1:-}" == -* ]]; then
       # Could be interpreted as an option for `exec` or `flock`.
-      echo >&2 "Error: The argument after '--' does not look like a program name"
+      echo >&2 "rrpak: error: The argument after '--' does not look like a program name"
       usage 1
     fi
     unset runlock_path
@@ -417,7 +419,7 @@ case "$cmd" in
     ;;
 
   local)
-    echo >&2 "Misconfiguration: 'rrpak local' should be handled by the rrpak shell function"
+    echo >&2 "rrpak: misconfiguration: 'rrpak local' should be handled by the rrpak shell function"
     exit 1
     ;;
 
@@ -454,7 +456,7 @@ case "$cmd" in
       created=$(stat -c %Y "$rrpak_local_cache_path/$oldversion/created" 2>/dev/null || true)
       if [[ "$opt" == "--old" ]]; then
         if [[ "$oldversion" == "" ]] || [[ "$created" == "" ]]; then
-          echo >&2 "Error: This package list is not in the cache. Try again without --old."
+          echo >&2 "rrpak: error: This package list is not in the cache. Try again without --old."
           exit 1
         fi
       else
@@ -467,11 +469,11 @@ case "$cmd" in
     if [[ "$destination" == "" ]]; then
       destination=$(mktemp -d -p "$rrpak_local_cache_path" env.XXXXXXXXXX.rrpak)
 
-      echo >&2 "Installing ${packages[*]} to $destination..."
+      echo >&2 "rrpak: Installing ${packages[*]} to $destination..."
       do_build
       touch "$destination/created" "$destination/runlock"
       ln -sfT "${destination##*/}" "$rrpak_local_cache_path/$symlink"
-      echo >&2 "Done."
+      echo >&2 "rrpak: Done."
     fi
 
     touch "$destination/used"
@@ -527,8 +529,13 @@ case "$cmd" in
     usage 0
     ;;
 
+  -*)
+    echo >&2 "rrpak: error: Unknown option '$cmd'"
+    usage 1
+    ;;
+
   *)
-    echo >&2 "Unknown command '$cmd'"
+    echo >&2 "rrpak: error: Unknown command '$cmd'"
     usage 1
     ;;
 esac
