@@ -43,19 +43,33 @@ usage () {
 
 wrapcurl () {
   echo >&2 "Downloading ${*: -1}"
-  local curlopt=-fL
-  [[ -t 2 ]] && curlopt+='#'
-  curl "$curlopt" "$@" && true
-  case "$?" in
-  0) true;;
-  23) echo >&2 "Ignoring curl error";;  # Can happen with "grep -m1". See https://stackoverflow.com/a/28879552
-  *) false;;
-  esac
+  local curlopt=--no-progress-meter
+  [[ -t 2 ]] && curlopt=-#
+  curl -fL "$curlopt" "$@"
 }
 
 wrapgrep () {
   grep "$@" && true
   (( "$?" < 2 ))  # 0 and 1 are good exit codes
+}
+
+find_latest () {
+  # Directly piping 'curl | grep -m 1' would save some download time, but curl complains about
+  # "curl: (23) Failure writing output to destination". We'd need to special case $? == 23, and it
+  # still prints to stderr which looks a bit ugly. See also https://stackoverflow.com/a/28879552
+  local url="https://api.github.com/repos/$1/releases/latest"
+  local ver
+  echo >&2 "Discovering $url"
+  ver=$(curl -fLsS "$url")
+  ver=$(wrapgrep -o -m 1 "$2" <<< "$ver")
+  ver=${ver#'"'}
+  ver=${ver%'"'}
+  if [[ "$ver" == "" ]]; then
+    echo >&2 "rrpak: error: Unable to determine latest version of $1"
+    exit 1
+  fi
+  latest_filename=$ver
+  latest_url="https://github.com/$1/releases/latest/download/$ver"
 }
 
 put_micromamba_in_misc () {
@@ -82,13 +96,8 @@ install_age () {
 
 install_gh () {
   mkdir -p bin
-  local ver
-  ver=$(wrapcurl -sS https://api.github.com/repos/cli/cli/releases/latest | wrapgrep -o -m 1 '"gh[^"]*linux_amd64.tar.gz"' | tr -d '"')
-  if [ "$ver" == "" ]; then
-    echo >&2 "Error: Unable to determine gh version"
-    exit 1
-  fi
-  wrapcurl "https://github.com/cli/cli/releases/latest/download/$ver" | tar -xz --strip-components=2 -C ./bin "${ver%.tar.gz}/bin/gh"
+  find_latest cli/cli '"gh[^"]*linux_amd64.tar.gz"'
+  wrapcurl "$latest_url" | tar -xz --strip-components=2 -C ./bin "${latest_filename%.tar.gz}/bin/gh"
   # The tarball also contains gh_*/share/man. Probably not needed.
 }
 
@@ -101,13 +110,8 @@ install_lf () {
 
 install_ripgrep () {
   mkdir -p bin misc ripgreptmp
-  local ver
-  ver=$(wrapcurl -sS https://api.github.com/repos/BurntSushi/ripgrep/releases/latest | wrapgrep -o -m 1 '"ripgrep[^"]*x86_64-unknown-linux-musl.tar.gz"' | tr -d '"')
-  if [ "$ver" == "" ]; then
-    echo >&2 "Error: Unable to determine ripgrep version"
-    exit 1
-  fi
-  wrapcurl "https://github.com/BurntSushi/ripgrep/releases/latest/download/$ver" | tar -xz --strip-components=1 -C ./ripgreptmp "${ver%.tar.gz}/rg" "${ver%.tar.gz}/complete/rg.bash"
+  find_latest BurntSushi/ripgrep '"ripgrep[^"]*x86_64-unknown-linux-musl.tar.gz"'
+  wrapcurl "$latest_url" | tar -xz --strip-components=1 -C ./ripgreptmp "${latest_filename%.tar.gz}/rg" "${latest_filename%.tar.gz}/complete/rg.bash"
   mv ripgreptmp/rg bin/
   mv ripgreptmp/complete/rg.bash misc/
   rmdir ripgreptmp/complete
@@ -117,13 +121,8 @@ install_ripgrep () {
 
 install_micro () {
   mkdir -p bin
-  local ver
-  ver=$(wrapcurl -sS https://api.github.com/repos/zyedidia/micro/releases/latest | wrapgrep -o -m 1 '"micro[^"]*linux64.tar.gz"' | tr -d '"')
-  if [ "$ver" == "" ]; then
-    echo >&2 "Error: Unable to determine micro version"
-    exit 1
-  fi
-  wrapcurl "https://github.com/zyedidia/micro/releases/latest/download/$ver" | tar -xz --strip-components=1 -C ./bin "${ver%-*.tar.gz}/micro"
+  find_latest zyedidia/micro '"micro[^"]*linux64.tar.gz"'
+  wrapcurl "$latest_url" | tar -xz --strip-components=1 -C ./bin "${latest_filename%-*.tar.gz}/micro"
   # The tarball also contains LICENSE, LICENSE-THIRD-PARTY, README.md, micro.1, micro.desktop, micro.svg.
 }
 
