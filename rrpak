@@ -58,75 +58,78 @@ wrapgrep () {
   (( "$?" < 2 ))  # 0 and 1 are good exit codes
 }
 
-install_micromamba () {
-  mkdir -p "$destination/misc"
-  wrapcurl 'https://micro.mamba.pm/api/micromamba/linux-64/latest' | tar -xj --strip-components=1 -C "$destination/misc" bin/micromamba
+put_micromamba_in_misc () {
+  mkdir -p misc
+  wrapcurl 'https://micro.mamba.pm/api/micromamba/linux-64/latest' | tar -xj --strip-components=1 -C ./misc bin/micromamba
   # The tarball also contains info/ with licenses and build info jsons. Probably not needed.
-  if [ "${1:-}" != "implicit" ]; then
-    # Skip '-s bash'. Micromamba will guess the shell by inspecting its PPID. This should allow $destination/rc to work with non-bash posix shells (disclaimer: never tested).
-    # Work around https://github.com/mamba-org/mamba/issues/1748 and https://github.com/mamba-org/mamba/issues/2163.
-    echo "eval \"\$(${destination@Q}/misc/micromamba shell hook | sed '/COMPREPLY/ s/.MAMBA_EXE/__mamba_exe/; /PATH.*condabin/ s/.*/true/')\"" >> "$destination/rc"
+}
 
-    # rrpak does not set MAMBA_ROOT_PREFIX. The user can set it if they want.
-  fi
+install_micromamba () {
+  put_micromamba_in_misc
+
+  # Skip '-s bash'. Micromamba will guess the shell by inspecting its PPID. This should allow ./rc to work with non-bash posix shells (disclaimer: never tested).
+  # Work around https://github.com/mamba-org/mamba/issues/1748 and https://github.com/mamba-org/mamba/issues/2163.
+  echo "eval \"\$(${PWD@Q}/misc/micromamba shell hook | sed '/COMPREPLY/ s/.MAMBA_EXE/__mamba_exe/; /PATH.*condabin/ s/.*/true/')\"" >> rc
+
+  # rrpak does not set MAMBA_ROOT_PREFIX. The user can set it if they want.
 }
 
 install_age () {
-  mkdir -p "$destination/bin"
-  wrapcurl 'https://dl.filippo.io/age/latest?for=linux/amd64' | tar -xz --strip-components=1 -C "$destination/bin" age/age age/age-keygen
+  mkdir -p bin
+  wrapcurl 'https://dl.filippo.io/age/latest?for=linux/amd64' | tar -xz --strip-components=1 -C ./bin age/age age/age-keygen
   # The tarball also contains age/LICENSE.
 }
 
 install_gh () {
-  mkdir -p "$destination/bin"
+  mkdir -p bin
   local ver
   ver=$(wrapcurl -sS https://api.github.com/repos/cli/cli/releases/latest | wrapgrep -o -m 1 '"gh[^"]*linux_amd64.tar.gz"' | tr -d '"')
   if [ "$ver" == "" ]; then
     echo >&2 "Error: Unable to determine gh version"
     exit 1
   fi
-  wrapcurl "https://github.com/cli/cli/releases/latest/download/$ver" | tar -xz --strip-components=2 -C "$destination/bin" "${ver%.tar.gz}/bin/gh"
+  wrapcurl "https://github.com/cli/cli/releases/latest/download/$ver" | tar -xz --strip-components=2 -C ./bin "${ver%.tar.gz}/bin/gh"
   # The tarball also contains gh_*/share/man. Probably not needed.
 }
 
 install_lf () {
-  mkdir -p "$destination/bin" "$destination/misc"
-  wrapcurl 'https://github.com/gokcehan/lf/releases/latest/download/lf-linux-amd64.tar.gz' | tar -xz -C "$destination/misc" lf
-  echo $'#!/bin/bash\nexec "$(dirname "$0")/../misc/lf" -single "$@"' > "$destination/bin/lf"
-  chmod a+x "$destination/bin/lf"
+  mkdir -p bin misc
+  wrapcurl 'https://github.com/gokcehan/lf/releases/latest/download/lf-linux-amd64.tar.gz' | tar -xz -C ./misc lf
+  echo $'#!/bin/bash\nexec "$(dirname "$0")/../misc/lf" -single "$@"' > bin/lf
+  chmod a+x bin/lf
 }
 
 install_ripgrep () {
-  mkdir -p "$destination/bin" "$destination/misc" "$destination/ripgreptmp"
+  mkdir -p bin misc ripgreptmp
   local ver
   ver=$(wrapcurl -sS https://api.github.com/repos/BurntSushi/ripgrep/releases/latest | wrapgrep -o -m 1 '"ripgrep[^"]*x86_64-unknown-linux-musl.tar.gz"' | tr -d '"')
   if [ "$ver" == "" ]; then
     echo >&2 "Error: Unable to determine ripgrep version"
     exit 1
   fi
-  wrapcurl "https://github.com/BurntSushi/ripgrep/releases/latest/download/$ver" | tar -xz --strip-components=1 -C "$destination/ripgreptmp" "${ver%.tar.gz}/rg" "${ver%.tar.gz}/complete/rg.bash"
-  mv "$destination/ripgreptmp/rg" "$destination/bin"
-  mv "$destination/ripgreptmp/complete/rg.bash" "$destination/misc"
-  rmdir "$destination/ripgreptmp/complete"
-  rmdir "$destination/ripgreptmp"
-  echo "source ${destination@Q}/misc/rg.bash" >> "$destination/rc"
+  wrapcurl "https://github.com/BurntSushi/ripgrep/releases/latest/download/$ver" | tar -xz --strip-components=1 -C ./ripgreptmp "${ver%.tar.gz}/rg" "${ver%.tar.gz}/complete/rg.bash"
+  mv ripgreptmp/rg bin/
+  mv ripgreptmp/complete/rg.bash misc/
+  rmdir ripgreptmp/complete
+  rmdir ripgreptmp
+  echo "source ${PWD@Q}/misc/rg.bash" >> rc
 }
 
 install_micro () {
-  mkdir -p "$destination/bin"
+  mkdir -p bin
   local ver
   ver=$(wrapcurl -sS https://api.github.com/repos/zyedidia/micro/releases/latest | wrapgrep -o -m 1 '"micro[^"]*linux64.tar.gz"' | tr -d '"')
   if [ "$ver" == "" ]; then
     echo >&2 "Error: Unable to determine micro version"
     exit 1
   fi
-  wrapcurl "https://github.com/zyedidia/micro/releases/latest/download/$ver" | tar -xz --strip-components=1 -C "$destination/bin" "${ver%-*.tar.gz}/micro"
+  wrapcurl "https://github.com/zyedidia/micro/releases/latest/download/$ver" | tar -xz --strip-components=1 -C ./bin "${ver%-*.tar.gz}/micro"
   # The tarball also contains LICENSE, LICENSE-THIRD-PARTY, README.md, micro.1, micro.desktop, micro.svg.
 }
 
 install_shellcheck () {
-  mkdir -p "$destination/bin"
-  wrapcurl "https://github.com/koalaman/shellcheck/releases/download/stable/shellcheck-stable.linux.x86_64.tar.xz" | tar -xJ --strip-components=1 -C "$destination/bin" "shellcheck-stable/shellcheck"
+  mkdir -p bin
+  wrapcurl "https://github.com/koalaman/shellcheck/releases/download/stable/shellcheck-stable.linux.x86_64.tar.xz" | tar -xJ --strip-components=1 -C ./bin "shellcheck-stable/shellcheck"
   # The tarball also contains LICENSE.txt, README.txt.
 }
 
@@ -140,27 +143,26 @@ install_pipx () {
   # But the default interpreter used by pipx will still be /usr/bin/python3.
   # This is a huge hack to make that happen. It is probably very unsupported
   # and might not be the best way to do it.
-  mkdir -p "$destination/misc" "$destination/bin"
+  mkdir -p misc bin
 
   # The temporary venv is used just to make it work without systemwide pip.
   echo >&2 "Creating temporary venv"
-  local tmpenv
-  tmpenv=$(mktemp -d)
-  /usr/bin/python3 -m venv "$tmpenv/v"
+  /usr/bin/python3 -m venv pipx_tmp_pip_env
 
   # This is what `-m venv --upgrade-deps` would do. See venv/__init__.py.
   echo >&2 "Upgrading pip, setuptools"
-  "$tmpenv/v/bin/pip" --isolated --no-cache-dir install --upgrade pip setuptools
+  pipx_tmp_pip_env/bin/pip --isolated --no-cache-dir install --upgrade pip setuptools
 
   # I haven't found official docs on the layout created by `pip install --target`.
   echo >&2 "Installing pipx"
-  "$tmpenv/v/bin/pip" --isolated --no-cache-dir install --target "$destination/misc/pipxbase" pipx
-  rm -rf "$tmpenv"
+  pipx_tmp_pip_env/bin/pip --isolated --no-cache-dir install --target ./misc/pipxbase pipx
 
-  # The bins have a shebang from $tmpenv and they don't know where to find
-  # libraries. Edit each bin to fix it. Huge hack!
+  rm -rf pipx_tmp_pip_env
+
+  # The bins have a shebang from pipx_tmp_pip_env and they don't know where to
+  # find libraries. Edit each bin to fix it. Huge hack!
   echo >&2 "Editing bin scripts"
-  env -C "$destination" /usr/bin/python3 -c 'if True:
+  /usr/bin/python3 -c 'if True:
     import os, sys, pathlib
     for p in pathlib.Path("misc/pipxbase/bin").iterdir():
       with p.open() as f: lines = f.read().split("\n")
@@ -171,10 +173,9 @@ install_pipx () {
       with p.open("w") as f: f.write("\n".join(lines))
   '
 
-  local old=$PWD
-  cd "$destination/bin"
+  cd bin
   ln -s ../misc/pipxbase/bin/* .
-  cd "$old"
+  cd ..
 }
 
 normalize_packages () {
@@ -209,6 +210,9 @@ do_build () {
   mkdir -p "$destination"
   touch "$destination/rc"
 
+  local oldcwd="$PWD"
+  cd "$destination"
+
   condapackages=()
   pippackages=()
   pathdirs=("$destination/bin" "$destination/menv/bin")
@@ -222,8 +226,8 @@ do_build () {
   done
 
   if [ "${#condapackages[@]}" != 0 ]; then
-    if ! [ -e "$destination/misc/micromamba" ]; then
-      install_micromamba implicit
+    if ! [[ -e misc/micromamba ]]; then
+      put_micromamba_in_misc
     fi
 
     unset "${!CONDA@}"
@@ -245,13 +249,13 @@ do_build () {
     # We don't want to add this environment to environments.txt because it looks ugly.
     # But there is no option or config setting to disable it.
     # Instead of calling 'micromamba create', let's make it ourselves. Then populate it with 'micromamba install'.
-    mkdir "$destination/menv" "$destination/menv/conda-meta"
-    touch "$destination/menv/conda-meta/history"
+    mkdir menv menv/conda-meta
+    touch menv/conda-meta/history
 
-    "$destination/misc/micromamba" --no-rc install -y -p "$destination/menv" -c conda-forge "${condapackages[@]}"
+    ./misc/micromamba --no-rc install -y -p ./menv -c conda-forge "${condapackages[@]}"
     # TODO: limited bin in path, with wrappers? probably later (if ever).
 
-    rm -rf "$destination/mpkgs"
+    rm -rf mpkgs
   fi
 
   for pkg in "${pippackages[@]}"; do
@@ -265,18 +269,18 @@ do_build () {
     fi
 
     echo >&2 "Installing $pkg with pip in $destination/venv-$pkg using $py"
-    "$py" -m venv --upgrade-deps "$destination/venv-$pkg"
-    existingbins=("$destination/venv-$pkg/bin"/*)
-    "$destination/venv-$pkg/bin/pip" install "$pkg"
+    "$py" -m venv --upgrade-deps "venv-$pkg"
+    existingbins=("venv-$pkg/bin"/*)
+    "venv-$pkg/bin/pip" install "$pkg"
 
-    mkdir "$destination/venv-$pkg/filteredbin"
+    mkdir "venv-$pkg/filteredbin"
     pathdirs+=("$destination/venv-$pkg/filteredbin")
-    for binfile in "$destination/venv-$pkg/bin"/*; do
+    for binfile in "venv-$pkg/bin"/*; do
       existed=
       for existingbinfile in "${existingbins[@]}"; do
         [ "$binfile" == "$existingbinfile" ] && existed=y
       done
-      [ "$existed" == "" ] && ln -s "../bin/${binfile##*/}" "$destination/venv-$pkg/filteredbin"
+      [ "$existed" == "" ] && ln -s "../bin/${binfile##*/}" "venv-$pkg/filteredbin"
     done
   done
 
@@ -303,9 +307,11 @@ do_build () {
 
   for dir in "${pathdirs[@]}"; do
     if [ -e "$dir" ]; then
-      printf 'case ":$PATH:" in\n  *:%s:*) ;;\n  *) PATH=%s:$PATH;;\nesac\n' "${dir@Q}" "${dir@Q}" >> "$destination/rc"
+      printf 'case ":$PATH:" in\n  *:%s:*) ;;\n  *) PATH=%s:$PATH;;\nesac\n' "${dir@Q}" "${dir@Q}" >> rc
     fi
   done
+
+  cd "$oldcwd"
 }
 
 (( $# == 0 )) && usage 0
