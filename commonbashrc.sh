@@ -1,5 +1,7 @@
 # Tomi's universal bash initialization file
 
+# shellcheck shell=bash disable=SC1091,SC2016,SC2244,SC2250,SC2312
+
 __shellstuff_dir=$(dirname "${BASH_SOURCE[0]}")
 __shellstuff_dir=$(readlink -fv "$__shellstuff_dir")
 
@@ -10,8 +12,8 @@ __shellstuff_dir=$(readlink -fv "$__shellstuff_dir")
 # the SYS_BASHRC compile option.) Hopefully this should be harmless on other
 # distributions, I haven't seen anyone except Fedora using this exact filename.
 # XXX: As of this writing, this was never tested. I don't use Fedora.
-if [ -f /etc/bashrc ]; then
-  . /etc/bashrc
+if [[ -f /etc/bashrc ]]; then
+  source /etc/bashrc
 fi
 
 # Not borrowing Fedora's ~/.bashrc.d/* because I don't think I'll need it.
@@ -26,16 +28,20 @@ fi
 # It sets LS_COLORS.
 # On Fedora and Gentoo the system bashrc file already takes care of this.
 if [[ -z "$LS_COLORS" ]] && [[ -x /usr/bin/dircolors ]]; then
-    test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
+  if [[ -r ~/.dircolors ]]; then
+    eval "$(dircolors -b ~/.dircolors)"
+  else
+    eval "$(dircolors -b)"
+  fi
 fi
 
 # Borrowed from Debian/Ubuntu's /etc/skel/.bashrc.
 # On Arch, Fedora and Gentoo the system bashrc file already takes care of this.
 if [[ -z "$BASH_COMPLETION_VERSINFO" ]] && ! shopt -oq posix; then
-  if [ -f /usr/share/bash-completion/bash_completion ]; then
-    . /usr/share/bash-completion/bash_completion
-  elif [ -f /etc/bash_completion ]; then
-    . /etc/bash_completion
+  if [[ -f /usr/share/bash-completion/bash_completion ]]; then
+    source /usr/share/bash-completion/bash_completion
+  elif [[ -f /etc/bash_completion ]]; then
+    source /etc/bash_completion
   fi
 fi
 
@@ -184,7 +190,7 @@ for __shellstuff_i in "${PROMPT_COMMAND[@]}"; do
   [[ $__shellstuff_i == __vte_osc7 ]] && continue
   [[ $__shellstuff_i == __vte_prompt_command ]] && continue
   [[ $__shellstuff_i == __rrprompt ]] && continue  # if `source ~/.bashrc`
-  echo >&2 "warning: overriding PROMPT_COMMAND [${PROMPT_COMMAND[@]@Q}]"
+  echo >&2 "warning: overriding PROMPT_COMMAND [${PROMPT_COMMAND[*]@Q}]"
   break
 done
 unset __shellstuff_i
