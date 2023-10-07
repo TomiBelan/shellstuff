@@ -103,3 +103,93 @@ Example: If you run `bash a.sh` which sources `b.sh` which defines and calls `fn
 `${BASH_ARGV[0]}` also works... sometimes. I'll attempt to describe how it really works. BASH_ARGV is a stack and 0 is the top. Initially the main script's arguments are pushed, regardless of extdebug. `source file.sh` pushes the filename `file.sh`, regardless of extdebug, but only if there are no arguments. `source file.sh x y` pushes x, y if extdebug is enabled, otherwise nothing. `func x y` pushes x, y if extdebug is enabled, otherwise nothing. Conclusion: Let's stay with BASH_SOURCE.
 
 The path in `${BASH_SOURCE[0]}` (and `${BASH_ARGV[0]}`) will be absolute if `source` had to look it up on $PATH. Otherwise it will be exactly as it was given to `source` and may be relative.
+
+### Implementing a preexec hook
+
+There are four ways I know of to do something after a prompt and act on the user's input before it is executed.
+
+Sadly, none of them are very good. They all have problems.
+
+- `DEBUG` trap + `$BASH_COMMAND`
+  - Good: the DEBUG trap works regardless of history settings.
+  - Good: the DEBUG trap does not run for command substitutions in $PS1, and does not run an extra time if the command contains a command substitution. This is usually what I want.
+    - E.g. `echo $(echo aa)` and `$(echo echo aa)` run DEBUG exactly once. BASH_COMMAND is the original command, before command substitution is performed.
+  - Tolerable: the DEBUG trap also runs before prompt, for each command in $PROMPT_COMMAND.
+    - The trap code should not assume the user typed it.
+  - Tolerable: the DEBUG trap can also run during prompt.
+    - The trap code should check if `[[ -v COMP_LINE ]]` or `[[ -v READLINE_LINE ]]`. (`-v` also detects if they're set but empty. COMP_LINE is probably only needed if `functrace` or `extdebug` is enabled, because `complete -C` uses subshells and `complete -F` uses functions, but let's check it anyway.)
+  - Tolerable: the DEBUG trap also runs for the remaining commands during the rest of .bashrc, .profile, etc.
+    - The trap code should not do anything until it sees the first $PROMPT_COMMAND.
+  - Tolerable: stdout and stderr might already be redirected at the time the DEBUG trap runs.
+    - E.g. `{ echo aa; echo bb; echo cc; } &> output_file`
+    - E.g. `for f in ./*; do echo "$f"; done &> output_file`
+    - The trap code should avoid accidentally polluting the output file if it prints anything. Either by checking `[[ -t 2 ]]` or with `echo ... 2>/dev/null >/dev/tty`.
+      - `2>/dev/null` is a mostly theoretical safety measure -- just in case. It blocks a Bash error message if the process has no controlling terminal (in which case open("/dev/tty") fails with ENXIO). The 2> must be before 1>. You can test it with `setsid bash -c '...'`. In practice I think there's no way a normally started interactive shell could lose its tty.
+  - Neutral: the DEBUG trap might run multiple times for some inputs. This can be good for some use cases and a problem for others.
+    - E.g. `echo a; echo b; echo c` (BASH_COMMAND is: `echo a`, `echo b`, `echo c`)
+    - E.g. `echo a && echo b && echo c` (BASH_COMMAND is: `echo a`, `echo b`, `echo c`)
+    - E.g. `for f in ./*; do echo "$f"; done` (BASH_COMMAND is: _N_ &times; [`for f in ./*`, `echo "$f"`])
+  - Problem: the DEBUG trap does not run at all for some inputs. It'll run when it's time to display the next prompt, with $BASH_COMMAND from $PROMPT_COMMAND.
+    - E.g. <code></code>&nbsp;(empty command), `   ` (spaces), ctrl+V tab (tabs), `# hi` (comments)
+    - E.g. `;`, `)`, `>` (syntax errors)
+    - E.g. `for f in ; do echo "$f"; done` (zero iteration loops)
+    - E.g. `(echo a; echo b; echo c)` (subshells)
+      - This can be solved by enabling `functrace` (aka `set -T`) and/or `extdebug`. I don't like this because I feel it's too invasive and hacky, and probably slow. Also, the bash-preexec library tried it and [ran into some Bash bugs](https://github.com/rcaloras/bash-preexec#subshells).
+  - Problem: `$BASH_COMMAND` does not contain the original command as written. Bash takes the parsed command and serializes it back to a string.
+    - Aliases are already expanded.
+    - Whitespace between arguments is normalized.
+    - Whitespace (including newlines) in quotes or in heredocs is kept.
+    - Quotes and backslashes are mostly preserved, with one big exception: `$'...'` is replaced with `'...'` and escape sequences become actual special characters. E.g. `$'\e'` becomes the ESC character.
+    - Because of ESC and newlines, it might not be safe to print $BASH_COMMAND inside another terminal escape sequence, e.g. to show the command in the window title.
+  - Problem: when exiting with ctrl+D, Bash will run the DEBUG trap several times, but $BASH_COMMAND will still be the previous command. (Maybe because of my EXIT trap?)
+- `DEBUG` trap + `history 1`
+  - Used by the [bash-preexec library](https://github.com/rcaloras/bash-preexec).
+  - Same DEBUG trap notes and problems as above.
+  - Good: `history 1` is able to see comments, syntax errors, subshells, and ctrl+V tab (a single literal tab).
+    - Also a line consisting only of spaces, but only if `ignorespace` is disabled.
+  - Good: `history 1` preserves the original whitespace and quotes.
+  - Good: by default (see `cmdhist`), Bash tries to merge multiline entries into one line, adding semicolons where necessary. `history 1` also returns the merged line. Not literally what the user wrote. This is usually what I want.
+    - E.g. `echo a \` &#8629; `b` &rarr; `echo a b`
+    - E.g. `echo a &&` &#8629; `echo b` &rarr; `echo a && echo b`
+    - E.g. `for i in a b c` &#8629; `do` &#8629; `echo $i` &#8629; `done` &rarr; `for i in a b c; do echo $i; done`
+  - Tolerable: `history 1` can print a multi-line string if Bash can't rewrite it as one line.
+    - E.g. `echo 'a` &#8629; `b'` (quoted newline)
+    - E.g. `cat <<END` &#8629; `a` &#8629; `END` (heredoc) (it also has an extra newline after "END")
+    - The trap code should not assume it has to be a single line.
+  - Tolerable: `history 1` also prints the entry number and HISTTIMEFORMAT.
+    - The trap code should temporarily set HISTTIMEFORMAT to something machine readable.
+  - Tolerable: `history 1` can print non-printable characters in some rare cases, e.g. if you press ctrl+V esc.
+    - The trap code should not assume it has to be printable.
+  - Problem: `history 1` won't see commands starting with a space if `ignorespace` is on.
+  - Problem: `history 1` can't distinguish between commands ignored because of `ignorespace`, commands ignored because of `ignoredups`, commands ignored because of `HISTIGNORE`, empty commands, and exiting the shell with ctrl+D.
+    - In all those cases, it just prints the previous command that wasn't ignored.
+    - I looked into $HISTCMD and the prompt sequences `\!` and `\#`, but they didn't help.
+    - $BASH_COMMAND and $PS0 can't always reliably help distinguish these cases, because of their own blindspots (syntax errors and/or subshells).
+    - The bash-preexec library "solves" this by disabling `ignorespace`. That's a price I'm not willing to pay.
+  - Problem (only for me): reading the output with `somevar=$(history 1)` performs a fork.
+    - I have a self-imposed rule against unnecessary forking. If I run `ps` twice, I want them to have consecutive PIDs. (It used to be a fun challenge... Stopping now would be conceding defeat...)
+    - Command substitution always performs a fork, even for shell builtins. (Except `$(< )` in Bash 5.2+.)
+    - The fork can be avoided with a temporary file. Write `history 1 > f` and read it with `read somevar < f`. How disgusting. (At least you can put it on a tmpfs, and `history -a` would do a disk write anyway.)
+- `$PS0`
+  - It is printed after a prompt. In case of multiline input with $PS2, it's only printed once at the end.
+  - If PS0 contains `$(history 1)`, same notes and problems as above.
+  - Problem: $PS0 is just a prompt string and it can't run arbitrary code.
+    - $PS0 may contain command substitutions, but they run in a subshell, so variable assignments etc. won't be preserved. And they break my self-imposed rule against forking.
+    - $PS0 can assign to foo with `${foo:=value}`, but foo must be empty or unset.
+    - $PS0 can append to arr with `${arr[${#arr[@]}]:=value}`.
+    - The output can be suppressed with `${empty_variable#${arr[${#arr[@]}]:=value}}`.
+  - Problem: $PS0 is not printed after some inputs.
+    - E.g. <code></code>&nbsp;(empty command), `   ` (spaces), ctrl+V tab (tabs), `# hi` (comments)
+    - E.g. `;`, `)`, `>` (syntax errors)
+  - Problem: At the time of printing $PS0 is printed, $BASH_COMMAND still contains the previous command.
+    - Surprisingly, it is not the $PROMPT_COMMAND.
+- `bind -x` + `$READLINE_LINE`
+  - Used by the [bpx library](https://github.com/d630/bpx).
+  - Tolerable: lines are submitted not just with `accept-line (C-j, C-m)` but also `operate-and-get-next (C-o)`, `insert-comment (M-#)` and `edit-and-execute-command (C-x C-e)`. They should be rebound or disabled for completeness.
+  - Tolerable: $READLINE_LINE may contain non-printable characters in some rare cases, such as if the user presses ctrl+V esc.
+  - Problem: Bash erases the prompt line before `bind -x` and rerenders it afterwards. If the previous command's output didn't end with a newline, it will disappear.
+  - Problem: for multiline commands, `bind -x` will run for each line, but it won't see how Bash merges them into one line and where it adds semicolons.
+  - Problem: at the time `bash -x` runs, it is not yet known whether this is the last line or not.
+  - Problem: at the time `bash -x` runs, the prompt technically hasn't ended. For example it's too early to save the history file with `history -a`.
+
+For the moment I'm reluctantly using the "`DEBUG` trap + `history 1`" method.
