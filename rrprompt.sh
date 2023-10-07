@@ -12,8 +12,10 @@
 # https://man7.org/linux/man-pages/man1/bash.1.html#PROMPTING
 # https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit
 
+# shellcheck shell=bash disable=SC2016,SC1003
+
 # Sanity checks.
-[ -z "${BASH_VERSION-}" ] && return 0
+test -z "${BASH_VERSION-}" && return 0
 [[ $- != *i* ]] && return 0
 
 # Initialize variables (unless already set).
@@ -34,8 +36,8 @@ __rrprompt () {
   (( ${#RRPROMPT_SHORTCWD} > RRPROMPT_CWD_LIMIT )) && RRPROMPT_SHORTCWD=...${RRPROMPT_SHORTCWD:${#RRPROMPT_SHORTCWD} - RRPROMPT_CWD_LIMIT + 3}
 
   # Erase the line and fill it with the background color.
-  # Must be bere because Ctrl+R (history search) can glitch if \e[K is in PS1.
-  if [[ -n "$RRPROMPT_LINE_COLORS" ]]; then
+  # Must be here because Ctrl+R (history search) can glitch if \e[K is in PS1.
+  if [[ -n "${RRPROMPT_LINE_COLORS:-}" ]]; then
     printf '%s' "${RRPROMPT_LINE_COLORS@P}"$'\e[K' >&2
   fi
 }
@@ -62,7 +64,7 @@ PS0='\e[0m\e[K'
 # Of course, users can add $( ... ) to RRPROMPT_TEXT in their own .bashrc.
 
 # Let's not check $TERM, $COLORTERM etc. I think nowadays it's best to assume
-# that all terminals support at least 256 colors and OSC to set title, or at
+# that all terminals support at least 256 colors and OSC 0 to set title, or at
 # least they can harmlessly ignore it. E.g. the linux console:
 # https://github.com/torvalds/linux/commit/cec5b2a97a11ade56a701e83044d0a2a984c67b4
 # -
