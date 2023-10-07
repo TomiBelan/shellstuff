@@ -104,11 +104,20 @@ shopt -s checkhash
 # Disable history substitution with `!`. I don't think I ever used it on purpose.
 set +H
 
+# Show colors in tab completion.
+bind 'set colored-completion-prefix on'
+bind 'set colored-stats on'
+
+# `exit 0` because:
 # My current terminal (Wezterm) complains when bash has nonzero exit status.
 # This forces bash to always exit with 0, even if the last command was "false"
 # or we pressed ^C just before ^D. I'm OK with this because the exit status of
 # an interactive shell isn't really meaningful.
-trap 'exit 0' EXIT
+#
+# tmpfile stuff because:
+# Clean up the temporary file used by our DEBUG trap below.
+__shellstuff_tmpfile=
+trap '[[ "$__shellstuff_tmpfile" ]] && [[ -f "$__shellstuff_tmpfile" ]] && rm -f "$__shellstuff_tmpfile"; exit 0' EXIT
 
 # ----- ALIASES ----------------------------------------------------------------
 
@@ -157,6 +166,8 @@ eval "$("$__shellstuff_dir/rrpak" hook)"
 
 # Override PROMPT_COMMAND if it was set by some earlier script.
 # __debugtrap assumes the only value will be __rrprompt.
+# (If something is after __rrprompt, we might think it's the user's input. If
+# something is before __rrprompt, we won't detect the isstart && isend case.)
 #
 # Warn the user (to be safe just in case, and to be polite). But ignore known
 # common values of PROMPT_COMMAND from distro /etc/ files.
@@ -182,27 +193,125 @@ PROMPT_COMMAND=()
 
 source "$__shellstuff_dir/rrprompt.sh"
 
+# ----- EXTENDED WINDOW TITLE AND SQL HISTORY ----------------------------------
+
+__shellstuff_empty=
+__shellstuff_ps0_time=
+__shellstuff_ps0_wd=
+__shellstuff_nextstart=
+__shellstuff_lasthistory1=
+__shellstuff_activeid=
+
+# This is disgusting. See pathetic excuses in README.md.
+__shellstuff_tmpfile=$(mktemp /run/lock/shellstuff.$$.XXXXXXXXXX)
+
+# Writes to the controlling terminal even if stdout and stderr are redirected.
+# See explanation in README.md.
+__debugtrap_echo () {
+  printf '%s' "$1" 2>/dev/null >/dev/tty
+}
+
+__debugtrap_write_event () {
+  log+=" e:[$*]"
+  # TODO: To be implemented...
+}
+
 __debugtrap () {
-  [ -n "$COMP_LINE" ] && return 0
-  [ -n "$READLINE_LINE" ] && return 0
+  # Return if during prompt. -v also detects set but empty variables.
+  [[ -v COMP_LINE || -v READLINE_LINE ]] && return 0
 
-  # this runs
-  # - before showing prompt (BASH_COMMAND is __rrprompt)
-  # - before each of aa, bb, cc if the user executes "aa; bb; cc"
-  # - not at all before "(aa; bb; cc)" (I don't like the functrace+extdebug hack)
+  # - for simple commands, DEBUG runs with isstart=y before it and isend=y after it.
+  # - for commands that run DEBUG multiple times, isstart and isend are both false in the middle.
+  # - for commands that run DEBUG zero times, afterwards it'll get both isstart=y and isend=y.
+  # - at the beginning, DEBUG runs once with isend=y just before the first prompt.
+  local isstart='' isend=''
+  isstart=$__shellstuff_nextstart
+  [[ "$BASH_COMMAND" == "__rrprompt" ]] && isend=y
+  __shellstuff_nextstart=$isend
 
-  # show window title.
-  if [[ -t 2 ]] && [[ $RRPROMPT_TITLE ]] && [[ $BASH_COMMAND != __rrprompt ]]; then
-    printf '%s' "${RRPROMPT_TITLE_PREFIX@P}$BASH_COMMAND @ ${RRPROMPT_TITLE@P}${RRPROMPT_TITLE_SUFFIX@P}" >&2
-  fi
+  local log="d:${isstart:-.}${isend:-.} b:${BASH_COMMAND@Q}"
 
-  # if enabled, save each command to the history file immediately (before running it).
-  [[ "$SHELLSTUFF_SAVE_OFTEN" ]] && [[ "$HISTFILE" ]] && ! [[ "$BASH_COMMAND" =~ ^\ *(h|HISTFILE=)\ *$ ]] && history -a
+  if [[ $isstart || $isend ]]; then
+    local now=$EPOCHREALTIME
 
-  # send history information to historywriter.
-  local etype=run
-  [[ "$BASH_COMMAND" == "__rrprompt" ]] && etype=end
-  [ "$HISTFILE" ] && [ "$__history_shellid" ] && __history_write "$etype" "$1"
+    # My obstinate avoidance of forks has led to this repulsive monstrosity.
+    # Doing foo=$(history 1) performs a fork, but writing it to a temporary
+    # file doesn't. See also README.md.
+    local command=
+    HISTTIMEFORMAT=X history 1 >"$__shellstuff_tmpfile"
+    read -r -d '' command <"$__shellstuff_tmpfile"
+    true >"$__shellstuff_tmpfile"
+
+    command=${command#*X}
+
+    log+=" h:${command@Q}"
+
+    if [[ $isstart ]]; then
+      # `history 1` can't distinguish between ignorespace, ignoredups, empty
+      # commands, and ^D. See README.md. Let's use its output only if we know
+      # it is really the current command. Otherwise ignore it.
+      local knowcommand=
+      [[ "$command" != "$__shellstuff_lasthistory1" ]] && knowcommand=$command
+
+      [[ $knowcommand ]] && log+=' known' || log+=' unknown'
+
+      # Show the running command in the window title.
+      # (If isstart && isend, it's already over. Don't show it.)
+      if [[ ! $isend && -n "$RRPROMPT_TITLE" ]]; then
+        # Use the command from `history 1` if known. Otherwise fall back to
+        # $BASH_COMMAND. So for e.g. ` echo a; echo b; echo c` only the first
+        # command will be displayed. Not perfect, but easier to implement.
+        local titlecommand="$BASH_COMMAND"
+        [[ $knowcommand ]] && titlecommand=$knowcommand
+
+        # Don't show the command if it contains \n, \e or other special chars.
+        # See README.md for how that can happen. This regex should do the right
+        # thing. It's true on ' ', 'aaa', 'ááá', but false on '', $'\a', $'\t',
+        # $'\n', $'\r', $'\e', $'\x7f', $'\x8f', $'\xc3'.
+        if [[ "$titlecommand" =~ ^[[:print:]]+$ ]]; then
+          log+=" t:${titlecommand@Q}"
+          __debugtrap_echo "${RRPROMPT_TITLE_PREFIX@P}$titlecommand @ ${RRPROMPT_TITLE@P}${RRPROMPT_TITLE_SUFFIX@P}"
+        fi
+      fi
+
+      __shellstuff_activeid=
+
+      # Should the command be saved to history? I.e.
+      # - the command is known,
+      # - HISTFILE is on,
+      # - we aren't about to turn HISTFILE off.
+      #
+      # Note: I like ignoredups, but it's not quite ideal here. For normal Bash
+      # history, ignoredups is good. For SQL history, it would be nice to keep
+      # duplicates and save each run's timestamps and exit status.
+      if [[ $knowcommand && $HISTFILE && ! $knowcommand =~ ^\ *(h|HISTFILE=)\ *$ ]]; then
+        # $__shellstuff_ps0_time and $__shellstuff_ps0_wd might be unset if
+        # PS0 wasn't displayed. See README.md for how that can happen.
+        __shellstuff_activeid=$SRANDOM$SRANDOM
+        __debugtrap_write_event start "$__shellstuff_activeid" "${__shellstuff_ps0_time:-$now}" "${__shellstuff_ps0_wd:-$PWD}" "$knowcommand"
+
+        # If enabled, save each command to the Bash history file immediately
+        # (before running it).
+        [[ "$SHELLSTUFF_SAVE_OFTEN" ]] && history -a
+      fi
+    fi  # if isstart
+
+    if [[ $isend && $__shellstuff_activeid ]]; then
+      __debugtrap_write_event end "$__shellstuff_activeid" "$now" "$1"
+      __shellstuff_activeid=
+    fi
+
+    __shellstuff_lasthistory1=$command
+
+    __shellstuff_ps0_time=
+    __shellstuff_ps0_wd=
+  fi  # if isstart || isend
+
+  [[ $SHELLSTUFF_TRACE ]] && __debugtrap_echo "[$log]"$'\n'
+
   return 0
 }
+
+PS0+='${__shellstuff_empty#${__shellstuff_ps0_time:=$EPOCHREALTIME}${__shellstuff_ps0_wd:=$PWD}}'
+
 trap '__debugtrap $?' DEBUG
