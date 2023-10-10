@@ -209,7 +209,11 @@ __shellstuff_lasthistory1=
 __shellstuff_activeid=
 
 # This is disgusting. See pathetic excuses in README.md.
-__shellstuff_tmpfile=$(mktemp /run/lock/shellstuff.$$.XXXXXXXXXX)
+if [[ -w "$XDG_RUNTIME_DIR" && -O "$XDG_RUNTIME_DIR" ]]; then
+  __shellstuff_tmpfile=$(mktemp "$XDG_RUNTIME_DIR/shellstuff.$$.XXXXXXXXXX")
+else
+  __shellstuff_tmpfile=$(mktemp --tmpdir shellstuff.$$.XXXXXXXXXX)
+fi
 
 # Writes to the controlling terminal even if stdout and stderr are redirected.
 # See explanation in README.md.
@@ -237,7 +241,7 @@ __debugtrap () {
 
   local log="d:${isstart:-.}${isend:-.} b:${BASH_COMMAND@Q}"
 
-  if [[ $isstart || $isend ]]; then
+  if [[ $isstart || $isend ]] && [[ "$__shellstuff_tmpfile" ]] && [[ -f "$__shellstuff_tmpfile" ]]; then
     local now=$EPOCHREALTIME
 
     # My obstinate avoidance of forks has led to this repulsive monstrosity.
