@@ -31,6 +31,9 @@ if [[ -e "$config_path" ]]; then
   source "$config_path"
 fi
 
+curlprogressopt=--no-progress-meter
+[[ -t 2 ]] && curlprogressopt=-#
+
 usage () {
   echo >&2 "Usage:
   rrpak update
@@ -45,9 +48,15 @@ usage () {
 download () {
   mkdir unpacked
   echo >&2 "rrpak: Downloading $1"
-  local curlopt=--no-progress-meter
-  [[ -t 2 ]] && curlopt=-#
-  curl -fL "$curlopt" "$1" | tar -x "$2" -C unpacked
+  curl -fL "$curlprogressopt" "$1" | tar -x "$2" -C unpacked
+}
+
+downloadzip () {
+  mkdir unpacked
+  echo >&2 "rrpak: Downloading $1"
+  curl -fL "$curlprogressopt" "$1" -o unpacked/_download.zip
+  env -C unpacked unzip -q _download.zip
+  rm unpacked/_download.zip
 }
 
 clean_up_unpacked () {
@@ -151,6 +160,12 @@ install_shellcheck () {
   download 'https://github.com/koalaman/shellcheck/releases/download/stable/shellcheck-stable.linux.x86_64.tar.xz' --xz
   mv unpacked/shellcheck-stable/shellcheck bin/
   rm unpacked/shellcheck-stable/{LICENSE.txt,README.txt}
+}
+
+install_bw () {
+  mkdir -p bin
+  downloadzip 'https://vault.bitwarden.com/download/?app=cli&platform=linux'
+  mv unpacked/bw bin/
 }
 
 install_pipx () {
