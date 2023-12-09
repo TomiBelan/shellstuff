@@ -1,0 +1,86 @@
+#!/bin/bash
+
+set -e -u -o pipefail
+
+exec >&2
+
+this_script=$(readlink -vf "$0")
+shellstuff_dir=$(dirname "${this_script}")
+shellstuff_dir=${shellstuff_dir/#"${HOME}/"/"~/"}
+
+skel_content=$(</etc/skel/.bashrc)
+my_content=$(<~/.bashrc)
+skel_hash=$(sha256sum /etc/skel/.bashrc)
+
+new_content="[[ \$- != *i* ]] && return  # Stop if not interactive. Explained in shellstuff/README.md.
+
+source ${shellstuff_dir}/commonbashrc.sh"
+
+case "${skel_hash%% *}" in
+  afae8986f549c6403410e029f9cce7983311512d04b1f02af02e4ce0af0dd2bf) known=Debian ;;
+    # last change: 2015-01-29
+    # permalink: https://sources.debian.org/src/bash/5.2.15-2/debian/skel.bashrc/
+    # latest: https://sources.debian.org/src/bash/latest/debian/skel.bashrc/
+
+  342099da4dd28c394d3f8782d90d7465cb2eaa611193f8f378d6918261cb9bb8) known=Ubuntu ;;
+    # last change: unknown
+    # permalink: https://git.launchpad.net/ubuntu/+source/bash/tree/debian/skel.bashrc?id=f4a6a7f308779b118b4e8efecb87d4ad86f2d587
+    # latest: https://git.launchpad.net/ubuntu/+source/bash/tree/debian/skel.bashrc
+
+  959bc596166c9758fdd68836581f6b8f1d6fdb947d580bf24dce607998a077b8) known=Arch ;;
+    # last change: 2023-02-02
+    # permalink: https://gitlab.archlinux.org/archlinux/packaging/packages/bash/-/blob/6c4e8435a132bbf5924055e6e940e9a5bc95e0bf/dot.bashrc
+    # latest: https://gitlab.archlinux.org/archlinux/packaging/packages/bash/-/blob/main/dot.bashrc
+
+  c5566fb3645f14ef9f8fd2bcb0ad468bf6ef8a0c51a55633cb57f4c3e572aac6) known=Fedora ;;
+    # last change: 2022-11-06
+    # permalink: https://src.fedoraproject.org/rpms/bash/blob/b05f1d7a2338ad5f398190370e415a795d792d46/f/dot-bashrc
+    # latest: https://src.fedoraproject.org/rpms/bash/blob/rawhide/f/dot-bashrc
+
+  e280e34af6e830c93adb6285f66ead4812ddfb2bbc6a7ff618467f4c933f6446) known=Gentoo ;;
+    # last change: 2015-08-08
+    # permalink: https://gitweb.gentoo.org/repo/gentoo.git/tree/app-shells/bash/files/dot-bashrc?id=56bd759df1d0c750a065b8c845e93d5dfa6b549d
+    # latest: https://gitweb.gentoo.org/repo/gentoo.git/tree/app-shells/bash/files/dot-bashrc
+
+  *) known= ;;
+esac
+
+echo
+
+if [[ -n "${known}" ]]; then
+  echo "INFO: The hash of /etc/skel/.bashrc is recognized as a standard ${known} file. I checked that commonbashrc.sh can fully replace it."
+else
+  echo "WARNING: The hash of /etc/skel/.bashrc is not recognized. Perhaps the distribution added something new. It would be good to look into it and update commonbashrc.sh if needed."
+fi
+
+echo
+
+if [[ "${my_content}" == *commonbashrc* ]]; then
+  echo "ERROR: Looks like ~/.bashrc already contains \`commonbashrc\`. Exiting."
+  echo
+  exit
+fi
+
+if [[ "${my_content}" == "${skel_content}" ]]; then
+  echo "INFO: /etc/skel/.bashrc and ~/.bashrc are equal."
+else
+  echo "WARNING: /etc/skel/.bashrc and ~/.bashrc differ. This script will remove any local customizations. If you want to keep them, you must add them back afterwards."
+  diff -u /etc/skel/.bashrc ~/.bashrc || true
+fi
+
+echo
+echo "This script will replace the whole content of ~/.bashrc with the following code:"
+echo "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
+echo "${new_content}"
+echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
+echo
+
+read -r -e -p "Continue? (y/n) [n] " reply
+
+case "${reply}" in
+  y* | Y*)
+    echo "${new_content}" >~/.bashrc
+    echo "Done."
+    ;;
+  *) echo "Exiting." ;;
+esac

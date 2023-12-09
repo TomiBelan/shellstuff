@@ -4,41 +4,24 @@
 
 This is my personal Bash initialization file. It is public to make it easier to use from multiple computers. I don't expect anybody else to use it, but it might be good for inspiration.
 
-Installation:
+**Installation:**
 
-1. Clone the shellstuff repo somewhere. E.g. `~/shellstuff` or `~/.shellstuff`.
+```bash
+git clone https://github.com/TomiBelan/shellstuff.git
+./shellstuff/install_shellstuff
+```
 
-2. Compare your ~/.bashrc with the distribution default. If they are not equal, decide whether you want to keep your changes.
+You can rename or move the directory if you prefer. The `install_shellstuff` script will do three things: 1. Report whether /etc/skel/.bashrc has a known good hash. 2. Report whether ~/.bashrc is equal to /etc/skel/.bashrc and print any differences. 3. Offer to replace the whole content of ~/.bashrc with this code:
 
-   ```bash
-   diff -u /etc/skel/.bashrc ~/.bashrc
-   ```
+```bash
+[[ $- != *i* ]] && return  # Stop if not interactive. Explained in shellstuff/README.md.
 
-3. Edit ~/.bashrc. Delete everything and replace it with:
+source ~/shellstuff/commonbashrc.sh
+```
 
-   ```bash
-   [[ $- != *i* ]] && return  # Stop if not interactive. Explained in shellstuff/README.md.
-
-   source ~/shellstuff/commonbashrc.sh
-   ```
-
-Customization:
+**Customization:**
 
 You can change the main prompt color by adding e.g. `RRPROMPT_COLOR=47` to ~/.bashrc. See rrprompt.sh for more.
-
-<details><summary>Expected hashes of /etc/skel/.bashrc</summary>
-
-Just to be safe, here are the most recent versions of /etc/skel/.bashrc in various distributions as of this writing. commonbashrc.sh should already cover everything they do. If the hash doesn't match anymore, perhaps the distribution added something new that might be worth a look.
-
-| Distribution | sha256sum /etc/skel/.bashrc                                      | Permalink                                                                                                                                 | Latest                                                                                        |
-| ------------ | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Debian       | afae8986f549c6403410e029f9cce7983311512d04b1f02af02e4ce0af0dd2bf | [2015-01-29](https://sources.debian.org/src/bash/5.2.15-2/debian/skel.bashrc/)                                                            | [link](https://sources.debian.org/src/bash/latest/debian/skel.bashrc/)                        |
-| Ubuntu       | 342099da4dd28c394d3f8782d90d7465cb2eaa611193f8f378d6918261cb9bb8 | [unknown date](https://git.launchpad.net/ubuntu/+source/bash/tree/debian/skel.bashrc?id=f4a6a7f308779b118b4e8efecb87d4ad86f2d587)         | [link](https://git.launchpad.net/ubuntu/+source/bash/tree/debian/skel.bashrc)                 |
-| Arch         | 959bc596166c9758fdd68836581f6b8f1d6fdb947d580bf24dce607998a077b8 | [2023-02-02](https://gitlab.archlinux.org/archlinux/packaging/packages/bash/-/blob/6c4e8435a132bbf5924055e6e940e9a5bc95e0bf/dot.bashrc)   | [link](https://gitlab.archlinux.org/archlinux/packaging/packages/bash/-/blob/main/dot.bashrc) |
-| Fedora       | c5566fb3645f14ef9f8fd2bcb0ad468bf6ef8a0c51a55633cb57f4c3e572aac6 | [2022-11-06](https://src.fedoraproject.org/rpms/bash/blob/b05f1d7a2338ad5f398190370e415a795d792d46/f/dot-bashrc)                          | [link](https://src.fedoraproject.org/rpms/bash/blob/rawhide/f/dot-bashrc)                     |
-| Gentoo       | e280e34af6e830c93adb6285f66ead4812ddfb2bbc6a7ff618467f4c933f6446 | [2015-08-08](https://gitweb.gentoo.org/repo/gentoo.git/tree/app-shells/bash/files/dot-bashrc?id=56bd759df1d0c750a065b8c845e93d5dfa6b549d) | [link](https://gitweb.gentoo.org/repo/gentoo.git/tree/app-shells/bash/files/dot-bashrc)       |
-
-</details>
 
 ## rrprompt.sh
 
