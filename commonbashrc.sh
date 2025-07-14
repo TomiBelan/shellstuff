@@ -84,6 +84,19 @@ h () {
   HISTFILE=
 }
 
+# Press Ctrl+P to delete the most recent command from history and put it in the
+# editor. Useful for fixing typos. (It only works with the most recent command
+# because bash/readline doesn't tell us the currently edited history index.)
+__histdelete () {
+  READLINE_LINE=$(HISTTIMEFORMAT=@ history 1 | sed -r 's/^[^@]+@//')
+  READLINE_POINT=${#READLINE_LINE}
+  history -d -1
+}
+bind -x '"\C-p":__histdelete'
+
+# Forbid altering history.
+bind 'set revert-all-at-newline on'
+
 # ----- SHELL OPTIONS ----------------------------------------------------------
 
 # Bash won't get SIGWINCH if another process is in the foreground.
