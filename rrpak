@@ -99,13 +99,17 @@ put_micromamba_in_misc () {
 install_micromamba () {
   put_micromamba_in_misc
 
-  # Skip '-s bash'. Micromamba will guess the shell by inspecting its PPID. This should allow ./rc to work with non-bash posix shells (disclaimer: never tested).
-  # Work around https://github.com/mamba-org/mamba/issues/1748 and https://github.com/mamba-org/mamba/issues/2163.
+  # - RRPAK_PREPARING_RUN is a hack to allow `rrpak run micromamba -- micromamba ...`.
+  #   `rrpak run` runs commands wrapped in `exec flock`, so defining a shell function won't work, it really needs to be in $PATH.
+  # - `-s bash` is needed if you try to `eval $(.../rrpak hook)` inside a non-interactive #!/bin/bash script.
+  #   Without -s, micromamba tries to detect the shell by reading Name from /proc/${PPID}/status. But for scripts it's the script name, not "bash".
+  #   ./rc is currently bash-specific anyway. (E.g. `source rg.bash`, EPOCHSECONDS in the rrpak_permanentenv_remind_after check.)
+  # - The sed command works around https://github.com/mamba-org/mamba/issues/2163.
   local mambasnippet=(
     'if [ -n "${RRPAK_PREPARING_RUN:-}" ]; then'
     '  PATH='"${PWD@Q}"'/misc/micromambabin:$PATH'
     'else'
-    '  eval "$('"${PWD@Q}"'/misc/micromambabin/micromamba shell hook | sed '\''/COMPREPLY/ s/.MAMBA_EXE/__mamba_exe/; /PATH.*condabin/ s/.*/true/'\'')"'
+    '  eval "$('"${PWD@Q}"'/misc/micromambabin/micromamba shell hook -s bash | sed '\''/PATH.*condabin/ s/.*/true/'\'')"'
     'fi'
   )
   printf '%s\n' "${mambasnippet[@]}" >> rc
