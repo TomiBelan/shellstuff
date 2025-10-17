@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck enable=all
 
 set -e -u -o pipefail
 
@@ -8,8 +9,13 @@ this_script=$(readlink -vf "$0")
 shellstuff_dir=$(dirname "${this_script}")
 shellstuff_dir=${shellstuff_dir/#"${HOME}/"/"~/"}
 
+if [[ -e ~/.bashrc ]]; then
+  my_content=$(<~/.bashrc)
+else
+  my_content='<MISSING>'
+fi
+
 skel_content=$(</etc/skel/.bashrc)
-my_content=$(<~/.bashrc)
 skel_hash=$(sha256sum /etc/skel/.bashrc)
 
 new_content="[[ \$- != *i* ]] && return  # Stop if not interactive. Explained in shellstuff/README.md.
@@ -45,34 +51,39 @@ case "${skel_hash%% *}" in
   *) known= ;;
 esac
 
+color=y
+[[ -n "${NO_COLOR:-}" ]] && color=
+
 echo
 
 if [[ -n "${known}" ]]; then
-  echo "INFO: The hash of /etc/skel/.bashrc is recognized as a standard ${known} file. I checked that commonbashrc.sh can fully replace it."
+  echo "${color:+$'\e'[92m}GOOD:${color:+$'\e'[0m} The hash of /etc/skel/.bashrc is recognized as a standard ${known} file. I checked that commonbashrc.sh can fully replace it."
 else
-  echo "WARNING: The hash of /etc/skel/.bashrc is not recognized. Perhaps the distribution added something new. It would be good to look into it and update commonbashrc.sh if needed."
+  echo "${color:+$'\e'[1;33m}WARNING:${color:+$'\e'[0m} The hash of /etc/skel/.bashrc is not recognized. Perhaps the distribution added something new. It would be good to look into it and update commonbashrc.sh if needed."
 fi
 
 echo
 
 if [[ "${my_content}" == *commonbashrc* ]]; then
-  echo "ERROR: Looks like ~/.bashrc already contains \`commonbashrc\`. Exiting."
+  echo "${color:+$'\e'[1;31m}ERROR:${color:+$'\e'[0m} Looks like ~/.bashrc already contains \`commonbashrc\`. Exiting."
   echo
   exit
 fi
 
-if [[ "${my_content}" == "${skel_content}" ]]; then
-  echo "INFO: /etc/skel/.bashrc and ~/.bashrc are equal."
+if [[ "${my_content}" == '<MISSING>' ]]; then
+  echo "${color:+$'\e'[92m}NEUTRAL:${color:+$'\e'[0m} ~/.bashrc does not exist. This script will create it."
+elif [[ "${my_content}" == "${skel_content}" ]]; then
+  echo "${color:+$'\e'[92m}GOOD:${color:+$'\e'[0m} /etc/skel/.bashrc and ~/.bashrc are equal."
 else
-  echo "WARNING: /etc/skel/.bashrc and ~/.bashrc differ. This script will remove any local customizations. If you want to keep them, you must add them back afterwards."
-  diff -u /etc/skel/.bashrc ~/.bashrc || true
+  echo "${color:+$'\e'[1;33m}WARNING:${color:+$'\e'[0m} /etc/skel/.bashrc and ~/.bashrc differ. ${color:+$'\e'[1;33m}This script will remove any local customizations.${color:+$'\e'[0m} If you want to keep them, you must add them back afterwards."
+  diff -u ${color:+--color=auto} /etc/skel/.bashrc ~/.bashrc || true
 fi
 
 echo
-echo "This script will replace the whole content of ~/.bashrc with the following code:"
-echo "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
+echo "${color:+$'\e'[1m}This script will replace the whole content of ~/.bashrc with the following code:${color:+$'\e'[0m}"
+echo "${color:+$'\e'[2m}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
 echo "${new_content}"
-echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
+echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>${color:+$'\e'[0m}"
 echo
 
 read -r -e -p "Continue? (y/n) [n] " reply
@@ -80,7 +91,7 @@ read -r -e -p "Continue? (y/n) [n] " reply
 case "${reply}" in
   y* | Y*)
     echo "${new_content}" >~/.bashrc
-    echo "Done."
+    echo "${color:+$'\e'[1;32m}Done.${color:+$'\e'[0m}"
     ;;
   *) echo "Exiting." ;;
 esac
