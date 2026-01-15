@@ -1,6 +1,6 @@
 # Tomi's universal bash initialization file
 
-# shellcheck shell=bash disable=SC1091,SC2016,SC2244,SC2250,SC2312
+# shellcheck shell=bash disable=SC1091,SC2016,SC2164,SC2244,SC2250,SC2312
 
 __shellstuff_dir=$(dirname "${BASH_SOURCE[0]}")
 __shellstuff_dir=$(readlink -fv "$__shellstuff_dir")
@@ -152,6 +152,8 @@ alias m='less'
 # `pskt` lists all processes except kernel threads (descendants of PID 2).
 alias pskt='ps --ppid 2 -p 2 --deselect'
 type ag &>/dev/null && alias ag='ag --color-match="4;31"'
+ct() { cd "$(mktemp -d)"; }
+[[ -d "$HOME/tmpt" ]] && ctt() { cd "$(TMPDIR="$HOME/tmpt" mktemp -d)"; }
 
 # ----- VARIABLES --------------------------------------------------------------
 
