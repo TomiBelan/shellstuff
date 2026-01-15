@@ -55,7 +55,11 @@ downloadzip () {
   mkdir unpacked
   echo >&2 "rrpak: Downloading $1"
   curl -fL "$curlprogressopt" "$1" -o unpacked/_download.zip
-  env -C unpacked unzip -q _download.zip
+  if command -v bsdtar &>/dev/null && ! command -v unzip &>/dev/null; then
+    env -C unpacked bsdtar xf _download.zip
+  else
+    env -C unpacked unzip -q _download.zip
+  fi
   rm unpacked/_download.zip
 }
 
