@@ -124,7 +124,7 @@ install_micromamba () {
 install_age () {
   mkdir -p bin
   download 'https://dl.filippo.io/age/latest?for=linux/amd64' -z
-  mv unpacked/age/{age,age-keygen} bin/
+  mv unpacked/age/{age,age-*} bin/
   rm unpacked/age/LICENSE
 }
 
