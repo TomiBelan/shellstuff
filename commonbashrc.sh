@@ -176,6 +176,7 @@ export PS_FORMAT=pid,user,tname,start_time,args
 type nano &>/dev/null && export EDITOR=nano
 
 [[ ":$PATH:" == *":$HOME/.local/bin:"* ]] || PATH=$HOME/.local/bin:$PATH
+[[ ":$PATH:" == *":$__shellstuff_dir/bin:"* ]] || PATH=$__shellstuff_dir/bin:$PATH
 
 # ----- RRPAK ------------------------------------------------------------------
 

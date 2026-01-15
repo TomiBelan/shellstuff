@@ -1,0 +1,92 @@
+#!/bin/bash
+# shellcheck enable=all disable=SC2250,SC2312
+# SC2312: ignoring return codes in pipelines is unavoidable
+set -f
+
+diffprog='diff'
+diffopts=()
+less=0
+
+while true; do
+  case "$1" in
+    --diff=*) diffprog=${1#--diff=};;
+    --git-diff) diffprog='git diff --no-index';;
+    --vxdiff) diffprog='vxdiff';;
+    --less) less=1;;
+    --) shift; break;;
+    -*) diffopts+=("$1");;
+    *) break;;
+  esac
+  shift
+done
+
+if [[ "${#diffopts[@]}" == 0 && "$diffprog" == "diff" ]]; then
+  if ((less)); then
+    diffopts=(--color=always -u)
+  else
+    diffopts=(--color=auto -u)
+  fi
+fi
+
+if (( $# < 3 )); then
+  echo >&2 "Usage: ${0##*/} [OPTIONS]... FILE1 FILE2 COMMAND [ARGS]..."
+  echo >&2
+  echo >&2 "Runs COMMAND on both FILE1 and FILE2 and compares the outputs."
+  echo >&2
+  echo >&2 "Options:"
+  echo >&2 "  --less        displays the diff in less"
+  echo >&2 "  --diff=PROG   runs another program instead of diff"
+  echo >&2 "  --git-diff    runs git diff --no-index"
+  echo >&2 "  --vxdiff      runs vxdiff"
+  echo >&2 "  Other options are passed to diff."
+  echo >&2
+  echo >&2 "Args:"
+  echo >&2 "  If ARGS contain '{}', it will be substituted with FILE1 or FILE2."
+  echo >&2 "  Otherwise the file will be provided on stdin."
+  echo >&2 "  If ARGS contain '//', it is interpreted as | (shell pipeline)."
+  echo >&2
+  echo >&2 "Examples:"
+  echo >&2 "  ${0##*/} a.txt b.txt sort"
+  echo >&2 "  ${0##*/} a.conf b.conf grep '^[^#]'"
+  echo >&2 "  ${0##*/} a.log b.log sed 's/^[^]]*//'"
+  echo >&2 "  ${0##*/} a.zip b.zip unzip -l {}"
+  echo >&2 "  ${0##*/} xterm xterm-256color infocmp -I {}"
+  echo >&2 "  ${0##*/} abcdef 123456 git show -U0 {}"
+  echo >&2 "  ${0##*/} a.bin b.bin hexdump -C {} // head"
+  exit 1
+fi
+
+a=$1
+b=$2
+shift 2
+
+havefile=0
+for arg; do [[ "$arg" == "{}" ]] && havefile=1; done
+((havefile)) || set -- cat {} // "$@"
+
+runpipe() {
+  cmd=()
+  while (( $# )); do
+    if [[ "$1" == "{}" ]]; then
+      # shellcheck disable=SC2154 # false positive, $input is assigned below
+      cmd+=("$input")
+    elif [[ "$1" == "//" ]]; then
+      shift; "${cmd[@]}" | runpipe "$@"; return
+    else
+      cmd+=("$1")
+    fi
+    shift
+  done
+  "${cmd[@]}"
+}
+
+runmain() {
+  # $diffprog is intentionally without quotes
+  $diffprog "${diffopts[@]}" <(input=$a runpipe "$@" </dev/null) <(input=$b runpipe "$@" </dev/null)
+}
+
+if ((less)); then
+  runmain "$@" | less -R
+else
+  runmain "$@"
+fi
