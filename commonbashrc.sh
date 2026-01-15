@@ -127,16 +127,11 @@ set +H
 bind 'set colored-completion-prefix on'
 bind 'set colored-stats on'
 
-# `exit 0` because:
 # My current terminal (Wezterm) complains when bash has nonzero exit status.
 # This forces bash to always exit with 0, even if the last command was "false"
 # or we pressed ^C just before ^D. I'm OK with this because the exit status of
 # an interactive shell isn't really meaningful.
-#
-# tmpfile stuff because:
-# Clean up the temporary file used by our DEBUG trap below.
-__shellstuff_tmpfile=
-trap '[[ "$__shellstuff_tmpfile" ]] && [[ -f "$__shellstuff_tmpfile" ]] && rm -f "$__shellstuff_tmpfile"; exit 0' EXIT
+trap 'exit 0' EXIT
 
 # ----- ALIASES ----------------------------------------------------------------
 
@@ -224,13 +219,6 @@ __shellstuff_nextstart=
 __shellstuff_lasthistory1=
 __shellstuff_activeid=
 
-# This is disgusting. See pathetic excuses in README.md.
-if [[ -w "$XDG_RUNTIME_DIR" && -O "$XDG_RUNTIME_DIR" ]]; then
-  __shellstuff_tmpfile=$(mktemp "$XDG_RUNTIME_DIR/shellstuff.$$.XXXXXXXXXX")
-else
-  __shellstuff_tmpfile=$(mktemp --tmpdir shellstuff.$$.XXXXXXXXXX)
-fi
-
 # Writes to the controlling terminal even if stdout and stderr are redirected.
 # See explanation in README.md.
 __debugtrap_echo () {
@@ -257,17 +245,18 @@ __debugtrap () {
 
   local log="d:${isstart:-.}${isend:-.} b:${BASH_COMMAND@Q}"
 
-  if [[ $isstart || $isend ]] && [[ "$__shellstuff_tmpfile" ]] && [[ -f "$__shellstuff_tmpfile" ]]; then
+  if [[ $isstart || $isend ]]; then
     local now=$EPOCHREALTIME
 
-    # My obstinate avoidance of forks has led to this repulsive monstrosity.
-    # Doing foo=$(history 1) performs a fork, but writing it to a temporary
-    # file doesn't. See also README.md.
+    # Use `history 1` to get the current command. See README.md for a survey of
+    # alternatives. Prefer the ${ ... } syntax in bash 5.3+ because it avoids a
+    # fork, and I like it when PIDs of shell commands are nicely sequential.
     local command=
-    HISTTIMEFORMAT=X history 1 >"$__shellstuff_tmpfile"
-    read -r -d '' command <"$__shellstuff_tmpfile"
-    true >"$__shellstuff_tmpfile"
-
+    if (( BASH_VERSINFO[0] * 10000 + BASH_VERSINFO[1] >= 50003 )); then
+      command=${ HISTTIMEFORMAT=X history 1; }
+    else
+      command=$( HISTTIMEFORMAT=X history 1 )
+    fi
     command=${command#*X}
 
     log+=" h:${command@Q}"

@@ -149,18 +149,15 @@ Sadly, none of them are very good. They all have problems.
     - I looked into $HISTCMD and the prompt sequences `\!` and `\#`, but they didn't help.
     - $BASH_COMMAND and $PS0 can't always reliably help distinguish these cases, because of their own blindspots (syntax errors and/or subshells).
     - The bash-preexec library "solves" this by disabling `ignorespace`. That's a price I'm not willing to pay.
-  - Problem (only for me): reading the output with `somevar=$(history 1)` performs a fork.
-    - I have a self-imposed rule against unnecessary forking. If I run `ps` twice, I want them to have consecutive PIDs. (It used to be a fun challenge... Stopping now would be conceding defeat...)
-    - Command substitution always performs a fork, even for shell builtins. (Except `$(< )` in Bash 5.2+.)
-    - The fork can be avoided with a temporary file. Write `history 1 > f` and read it with `read somevar < f`. How disgusting. (At least you can put it on a tmpfs, and `history -a` would do a disk write anyway.)
 - `$PS0`
   - It is printed after a prompt. In case of multiline input with $PS2, it's only printed once at the end.
   - If PS0 contains `$(history 1)`, same notes and problems as above.
-  - Problem: $PS0 is just a prompt string and it can't run arbitrary code.
-    - $PS0 may contain command substitutions, but they run in a subshell, so variable assignments etc. won't be preserved. And they break my self-imposed rule against forking.
+  - Problem (in Bash &leq;5.2): $PS0 is just a prompt string and it can't run arbitrary code.
+    - $PS0 may contain `$(foo)` command substitutions, but they run in a subshell, so variable assignments etc. won't be preserved.
     - $PS0 can assign to foo with `${foo:=value}`, but foo must be empty or unset.
     - $PS0 can append to arr with `${arr[${#arr[@]}]:=value}`.
     - The output can be suppressed with `${empty_variable#${arr[${#arr[@]}]:=value}}`.
+    - In Bash &geq;5.3, $PS0 can just use the `${ foo; }` command substitution syntax.
   - Problem: $PS0 is not printed after some inputs.
     - E.g. <code></code>&nbsp;(empty command), `   ` (spaces), ctrl+V tab (tabs), `# hi` (comments)
     - E.g. `;`, `)`, `>` (syntax errors)
