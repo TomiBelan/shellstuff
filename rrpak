@@ -98,6 +98,7 @@ put_micromamba_in_misc () {
   download 'https://micro.mamba.pm/api/micromamba/linux-64/latest' --bzip2
   mv unpacked/bin/micromamba misc/micromambabin/
   rm -rf unpacked/info  # Contains licenses and various build info. Probably not needed.
+  rm -rf unpacked/lib/cmake
 }
 
 install_micromamba () {
