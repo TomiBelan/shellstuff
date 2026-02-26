@@ -14,9 +14,19 @@ git clone https://github.com/TomiBelan/shellstuff.git
 You can rename or move the directory if you prefer. The `install_shellstuff` script will do three things: 1. Report whether /etc/skel/.bashrc has a known good hash. 2. Report whether ~/.bashrc is equal to /etc/skel/.bashrc and print any differences. 3. Offer to replace the whole content of ~/.bashrc with this code:
 
 ```bash
-[[ $- != *i* ]] && return  # Stop if not interactive. Explained in shellstuff/README.md.
+# shellcheck shell=bash source=/dev/null enable=all disable=SC2034,SC2154,SC2250
 
 source ~/shellstuff/commonbashrc.sh
+
+
+# ----- VARIABLE EXPORTS (for interactive or login or sshd shells) ------------
+
+
+# ----- EVERYTHING ELSE (for interactive shells only) -------------------------
+[[ $- == *i* ]] || return 0 # -------------------------------------------------
+
+
+# ------------------------------------ EOF ------------------------------------
 ```
 
 **Customization:**
@@ -35,21 +45,64 @@ For comparison, [this page](https://liquidprompt.readthedocs.io/en/latest/overvi
 
 ## Explanations
 
-### Why should .bashrc check for interactive shells? (`[[ $- != *i* ]]`)
+### Interactive shells, login shells, sshd shells
 
-Does Bash even read .bashrc if the shell is not interactive? Usually no. But there is one edge case: if Bash is started by sshd with a `-c` command, it may run some rc files even though it's not interactive.
+As best as I can tell from [man bash](https://man.archlinux.org/man/bash.1#INVOCATION) and [the code in run_startup_files()](https://sources.debian.org/src/bash/latest/shell.c/#:~:text=run_startup_files%20%28void%29%0A%7B):
 
-From [bash(1)](https://man.archlinux.org/man/bash.1):
+| Type   | Interactive | Startup files                     | Example |
+| ------ | ----------- | --------------------------------- | ------- |
+| normal | no          | `$BASH_ENV` (usually unset)       | `bash file.sh`, `bash -c 'command'` |
+| login  | no          | `/etc/profile`, `~/.bash_profile`, `$BASH_ENV` | graphical login with [SDDM](https://github.com/sddm/sddm/blob/develop/data/scripts/wayland-session) |
+| sshd   | no          | SYS_BASHRC, `~/.bashrc` (but see below) | `ssh computer 'command'` |
+| normal | yes         | SYS_BASHRC, `~/.bashrc`           | `bash`, `sudo -s`, terminal emulators |
+| login  | yes         | `/etc/profile`, `~/.bash_profile` | `su -`, `sudo -i`, tty1 login |
+| sshd   | yes         | `/etc/profile`, `~/.bash_profile` | `ssh computer` |
 
-> **Bash** attempts to determine when it is being run with its standard input connected to a network connection, as when executed by the remote shell daemon, usually _rshd_, or the secure shell daemon _sshd_. If **bash** determines it is being run in this fashion, it reads and executes commands from _~/.bashrc_, if that file exists and is readable. It will not do this if invoked as **sh**. The **--norc** option may be used to inhibit this behavior, and the **--rcfile** option may be used to force another file to be read, but neither _rshd_ nor _sshd_ generally invoke the shell with those options or allow them to be specified.
+Details:
 
-Implementation details: This is handled in [run_startup_files() in bash](https://github.com/bminor/bash/blob/ec8113b9861375e4e17b3307372569d429dec814/shell.c#L1136) and works by checking for `$SSH_CLIENT` or `$SSH_CLIENT2`. It is toggled by the compile time option SSH_SOURCE_BASHRC, which is enabled on [Debian](https://sources.debian.org/src/bash/latest/debian/patches/deb-bash-config.diff/), [Ubuntu](https://git.launchpad.net/ubuntu/+source/bash/tree/debian/patches/deb-bash-config.diff), [Fedora](https://src.fedoraproject.org/rpms/bash/blob/rawhide/f/bash-3.2-ssh_source_bash.patch), and [Gentoo](https://gitweb.gentoo.org/repo/gentoo.git/tree/app-shells/bash/bash-9999.ebuild#:~:text=DSSH_SOURCE_BASHRC), but not on [Arch](https://gitlab.archlinux.org/archlinux/packaging/packages/bash/-/blob/main/PKGBUILD) or in upstream Bash. It is true that sshd does not give Bash any extra options: when a command is given to ssh, [do_child() in sshd](https://github.com/openssh/openssh-portable/blob/3c6ab63b383b0b7630da175941e01de9db32a256/session.c#L1705) will run `/bin/bash -c 'some command'` with no other arguments. It also doesn't matter whether the ssh connection has a pseudoterminal (pty) or not.
+* `~/.bash_profile` in the above table is short for "first one of `~/.bash_profile`, `~/.bash_login`, and `~/.profile` that exists". In practice this is not an important distinction. All distros compared below provide exactly one such file and it basically just runs `~/.bashrc`.
 
-I think this behavior is unexpected and usually not what I want, so it's better to `return` immediately.
+* The non-interactive sshd shell is a special case described by [man bash](https://man.archlinux.org/man/bash.1#:~:text=sshd) thus:
 
-The default /etc/skel/.bashrc files on [Debian](https://sources.debian.org/src/bash/5.2.15-2/debian/skel.bashrc/#L5), [Ubuntu](https://git.launchpad.net/ubuntu/+source/bash/tree/debian/skel.bashrc?id=f4a6a7f308779b118b4e8efecb87d4ad86f2d587#n5), [Arch](https://gitlab.archlinux.org/archlinux/packaging/packages/bash/-/blob/6c4e8435a132bbf5924055e6e940e9a5bc95e0bf/dot.bashrc#L5) and [Gentoo](https://gitweb.gentoo.org/repo/gentoo.git/tree/app-shells/bash/files/dot-bashrc?id=56bd759df1d0c750a065b8c845e93d5dfa6b549d#n9) also have an early `return`. [Fedora](https://src.fedoraproject.org/rpms/bash/blob/b05f1d7a2338ad5f398190370e415a795d792d46/f/dot-bashrc) does not, but it at least tries to silence output in /etc/profile and /etc/bashrc.
+  > **Bash** attempts to determine when it is being run with its standard input connected to a network connection, as when executed by the remote shell daemon, usually _rshd_, or the secure shell daemon _sshd_. If **bash** determines it is being run in this fashion, it reads and executes commands from _~/.bashrc_, if that file exists and is readable. It will not do this if invoked as **sh**. The **--norc** option may be used to inhibit this behavior, and the **--rcfile** option may be used to force another file to be read, but neither _rshd_ nor _sshd_ generally invoke the shell with those options or allow them to be specified.
 
-For completeness: Bash also reads SYS_BASHRC in this scenario. It is `/etc/bash.bashrc` on Debian, Ubuntu and Arch, `/etc/bash/bashrc` on Gentoo, and is not set on Fedora. Fortunately, those files also contain an early `return`.
+  This is implemented in [run_startup_files()](https://sources.debian.org/src/bash/latest/shell.c/#:~:text=run_startup_files%20%28void%29%0A%7B) and works primarily by checking if `$SSH_CLIENT` or `$SSH_CLIENT2` are set. It is toggled by the compile time option SSH_SOURCE_BASHRC, which is enabled on [Debian](https://sources.debian.org/src/bash/latest/debian/patches/deb-bash-config.diff/), [Ubuntu](https://git.launchpad.net/ubuntu/+source/bash/tree/debian/patches/deb-bash-config.diff), [Fedora](https://src.fedoraproject.org/rpms/bash/blob/rawhide/f/bash-3.2-ssh_source_bash.patch), and [Gentoo](https://gitweb.gentoo.org/repo/gentoo.git/tree/app-shells/bash/bash-9999.ebuild#:~:text=DSSH_SOURCE_BASHRC), but not on [Arch](https://gitlab.archlinux.org/archlinux/packaging/packages/bash/-/blob/main/PKGBUILD) or in upstream Bash.
+
+  It is true that "neither _rshd_ nor _sshd_ generally invoke the shell with those options": when a command is given to ssh, [do_child() in sshd](https://github.com/openssh/openssh-portable/blob/3c6ab63b383b0b7630da175941e01de9db32a256/session.c#L1705) will always run `[$shell, "-c", "the command"]` with no other arguments. So the ssh client has no way to prevent SYS_BASHRC and `~/.bashrc` from running. This behavior isn't affected by whether the ssh connection has a pseudoterminal (pty) or not.
+
+* SYS_BASHRC is not documented in the man page. It is `/etc/bash.bashrc` on Debian, Ubuntu and Arch, and `/etc/bash/bashrc` on Gentoo. All of them also call it from `/etc/profile` in appropriate cases. All of them return immediately if not interactive. Fedora does not set SYS_BASHRC. It has a `/etc/bashrc` which is explicitly called by `/etc/profile` and `/etc/skel/.bashrc`, and which performs things in both interactive and non-interactive shells.
+
+* In all distros compared below, `/etc/profile` loads `/etc/profile.d/*.sh`. But pluggable startup files for non-login interactive shells are much less standardized. Arch loads nothing. Debian and Ubuntu load nothing, except specifically `/etc/profile.d/vte*.sh` since bash 5.3-1 (2025). Gentoo loads a separate directory, `/etc/bash/bashrc.d/*`. Fedora loads `/etc/profile.d/*.sh` in both `/etc/profile` and `/etc/bashrc`. This is a problem because some packages ship with `/etc/profile.d` scripts that expect to be loaded in all interactive shells, which is how it works on Fedora but not elsewhere. But in practice, it seems to be relatively rare, so shellstuff doesn't deal with it.
+
+Takeaways:
+
+* `~/.bashrc` and hence `commonbashrc.sh` may run in both interactive and non-interactive shells.
+  * It can be useful to export environment variables in both cases. For example, adding to `$PATH` will affect which programs are usable in `ssh computer 'command'`, and (for graphical logins) in the Exec field of .desktop files.
+  * Almost all other configuration (history, prompts, line editing options, aliases/functions for manual usage) is only for interactive shells. Running it in non-interactive shells would be wasteful or might even show errors (e.g. the `bind` command).
+* Therefore, my recommended structure of `~/.bashrc` is:
+  1. Load `commonbashrc.sh`.
+  2. `export` environment variables, if any.
+  3. Return if not interactive.
+  4. Everything else -- aliases, functions, non-exported variables, etc.
+* Keep `~/.bash_profile` unchanged. It's better to put exported variables in `~/.bashrc`, to more consistently handle the non-interactive sshd special case.
+* Startup files should make sure not to write to stdout in non-interactive shells, especially because of the non-interactive sshd special case. stderr is probably OK.
+* Keep in mind that "standard" environment variables configured in `~/.bashrc` or even `/etc/profile` won't apply to all processes:
+  * `ssh computer 'command'` (the non-interactive sshd special case) only loads `~/.bashrc`, but not `/etc/profile`.
+  * `sudo -s` loads `/root/.bashrc`, but not `/etc/profile`. You should use `sudo -i` instead.
+  * `sudo command` loads neither `/etc/profile` nor `/root/.bashrc`. It uses a clean environment, except some whitelisted variables as shown in `sudo sudo -V`.
+  * Services started by `systemd --user` may or may not have the variables, depending on if something ran `systemctl --user set-environment`, `import-environment` or similar. In particular, [KDE does it](https://sources.debian.org/src/kf6-kdbusaddons/latest/src/kupdatelaunchenvironmentjob.cpp/).
+  * crontab commands run in a cron-specific barebones environment.
+  * Other graphical login managers and desktop environments might behave differently.
+
+Default distribution configs:
+
+| Distro | /etc/profile | system bashrc? | ~/.bash_profile? | ~/.bashrc |
+| --- | --- | --- | --- | --- |
+| Debian | [/etc/profile](https://sources.debian.org/src/base-files/latest/share/profile/) | [/etc/bash.bashrc](https://sources.debian.org/src/bash/latest/debian/etc.bash.bashrc/) | [/etc/skel/.profile](https://sources.debian.org/src/bash/latest/debian/skel.profile/) | [/etc/skel/.bashrc](https://sources.debian.org/src/bash/latest/debian/skel.bashrc/) |
+| Ubuntu | [/etc/profile](https://git.launchpad.net/ubuntu/+source/base-files/tree/share/profile) | [/etc/bash.bashrc](https://git.launchpad.net/ubuntu/+source/bash/tree/debian/etc.bash.bashrc) | [/etc/skel/.profile](https://git.launchpad.net/ubuntu/+source/bash/tree/debian/skel.profile) | [/etc/skel/.bashrc](https://git.launchpad.net/ubuntu/+source/bash/tree/debian/skel.bashrc) |
+| Fedora | [/etc/profile](https://src.fedoraproject.org/rpms/setup/blob/rawhide/f/profile) | [/etc/bashrc](https://src.fedoraproject.org/rpms/setup/blob/rawhide/f/bashrc) | [/etc/skel/.bash_profile](https://src.fedoraproject.org/rpms/bash/blob/rawhide/f/dot-bash_profile) | [/etc/skel/.bashrc](https://src.fedoraproject.org/rpms/bash/blob/rawhide/f/dot-bashrc) |
+| Gentoo | [/etc/profile](https://gitweb.gentoo.org/proj/baselayout.git/tree/etc/profile) | [/etc/bash/bashrc](https://gitweb.gentoo.org/repo/gentoo.git/tree/app-shells/bash/files/bashrc-r2) | [/etc/skel/.bash_profile](https://gitweb.gentoo.org/repo/gentoo.git/tree/app-shells/bash/files/skel/dot-bash_profile) | [/etc/skel/.bashrc](https://gitweb.gentoo.org/repo/gentoo.git/tree/app-shells/bash/files/skel/dot-bashrc) |
+| Arch   | [/etc/profile](https://gitlab.archlinux.org/archlinux/packaging/packages/filesystem/-/blob/main/profile) | [/etc/bash.bashrc](https://gitlab.archlinux.org/archlinux/packaging/packages/bash/-/blob/main/system.bashrc) | [/etc/skel/.bash_profile](https://gitlab.archlinux.org/archlinux/packaging/packages/bash/-/blob/main/dot.bash_profile) | [/etc/skel/.bashrc](https://gitlab.archlinux.org/archlinux/packaging/packages/bash/-/blob/main/dot.bashrc) |
 
 ### Bash history variables
 

@@ -5,18 +5,54 @@
 __shellstuff_dir=$(dirname "${BASH_SOURCE[0]}")
 __shellstuff_dir=$(readlink -fv "$__shellstuff_dir")
 
-# ----- BORROWED ---------------------------------------------------------------
+# ----- BORROWED (COMMON) ------------------------------------------------------
 
 # Borrowed from Fedora's /etc/skel/.bashrc.
 # On Fedora, ~/.bashrc is responsible for reading /etc/bashrc. (They do not use
 # the SYS_BASHRC compile option.) Hopefully this should be harmless on other
 # distributions, I haven't seen anyone except Fedora using this exact filename.
+# This might change PATH, so it should run before the "VARIABLES" section below
+# and before any custom PATH additions in ~/.bashrc.
 # XXX: As of this writing, this was never tested. I don't use Fedora.
 if [[ -f /etc/bashrc ]]; then
   source /etc/bashrc
 fi
 
-# Not borrowing Fedora's ~/.bashrc.d/* because I don't think I'll need it.
+# Fedora's /etc/skel/.bashrc also sources ~/.bashrc.d/*. I don't need that.
+
+# ----- VARIABLES --------------------------------------------------------------
+
+# Good for `ls` (case sensitive sort) and `bash` (case sensitive [A-Z] globs).
+# It could also be solved with `alias ls=...` and `shopt -s globasciiranges`,
+# but exporting LC_COLLATE=C for all programs is probably a saner default.
+export LC_COLLATE=C
+
+export LESS=-MRi
+
+# The pager options used by systemctl and journalctl. This won't work with
+# `sudo systemctl`, but it's better than nothing.
+# The default value is FRSXMK. I removed X (no longer necessary with -F in less
+# 489+). I removed K (I don't want it). I added i.
+export SYSTEMD_LESS=FRSMi
+
+# Change default columns shown by `ps`.
+# But note that this disables the STAT and TIME columns.
+# If you need them, run ps with: `PS_FORMAT= ps ...`
+export PS_FORMAT=pid,user,tname,start_time,args
+
+type nano &>/dev/null && export EDITOR=nano
+
+[[ ":$PATH:" == *":$HOME/.local/bin:"* ]] || PATH=$HOME/.local/bin:$PATH
+[[ ":$PATH:" == *":$__shellstuff_dir/bin:"* ]] || PATH=$__shellstuff_dir/bin:$PATH
+
+# ----- +++++ INTERACTIVE SHELLS ONLY BEYOND THIS POINT +++++ ------------------
+
+# Non-interactive login/sshd shells only run the "BORROWED (COMMON)" and
+# "VARIABLES" sections of this file. See explanation in README.md.
+
+[[ $- != *i* ]] && return
+
+# ----- BORROWED (INTERACTIVE SHELLS) ------------------------------------------
 
 # Borrowed from Ubuntu's /etc/skel/.bashrc. Should also work on Debian.
 # It sets LESSOPEN and LESSCLOSE.
@@ -149,31 +185,6 @@ alias pskt='ps --ppid 2 -p 2 --deselect'
 type ag &>/dev/null && alias ag='ag --color-match="4;31"'
 ct() { cd "$(mktemp -d)"; }
 [[ -d "$HOME/tmpt" ]] && ctt() { cd "$(TMPDIR="$HOME/tmpt" mktemp -d)"; }
-
-# ----- VARIABLES --------------------------------------------------------------
-
-# Good for `ls` (case sensitive sort) and `bash` (case sensitive [A-Z] globs).
-# It could also be solved with `alias ls=...` and `shopt -s globasciiranges`,
-# but exporting LC_COLLATE=C for all programs is probably a saner default.
-export LC_COLLATE=C
-
-export LESS=-MRi
-
-# The pager options used by systemctl and journalctl. This won't work with
-# `sudo systemctl`, but it's better than nothing.
-# The default value is FRSXMK. I removed X (no longer necessary with -F in less
-# 489+). I removed K (I don't want it). I added i.
-export SYSTEMD_LESS=FRSMi
-
-# Change default columns shown by `ps`.
-# But note that this disables the STAT and TIME columns.
-# If you need them, run ps with: `PS_FORMAT= ps ...`
-export PS_FORMAT=pid,user,tname,start_time,args
-
-type nano &>/dev/null && export EDITOR=nano
-
-[[ ":$PATH:" == *":$HOME/.local/bin:"* ]] || PATH=$HOME/.local/bin:$PATH
-[[ ":$PATH:" == *":$__shellstuff_dir/bin:"* ]] || PATH=$__shellstuff_dir/bin:$PATH
 
 # ----- RRPAK ------------------------------------------------------------------
 

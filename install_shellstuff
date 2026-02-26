@@ -18,9 +18,19 @@ fi
 skel_content=$(</etc/skel/.bashrc)
 skel_hash=$(sha256sum /etc/skel/.bashrc)
 
-new_content="[[ \$- != *i* ]] && return  # Stop if not interactive. Explained in shellstuff/README.md.
+new_content='# shellcheck shell=bash source=/dev/null enable=all disable=SC2034,SC2154,SC2250
 
-source ${shellstuff_dir}/commonbashrc.sh"
+source '"${shellstuff_dir}"'/commonbashrc.sh
+
+
+# ----- VARIABLE EXPORTS (for interactive or login or sshd shells) ------------
+
+
+# ----- EVERYTHING ELSE (for interactive shells only) -------------------------
+[[ $- == *i* ]] || return 0 # -------------------------------------------------
+
+
+# ------------------------------------ EOF ------------------------------------'
 
 case "${skel_hash%% *}" in
   afae8986f549c6403410e029f9cce7983311512d04b1f02af02e4ce0af0dd2bf) known=Debian ;;
@@ -45,8 +55,8 @@ case "${skel_hash%% *}" in
 
   e280e34af6e830c93adb6285f66ead4812ddfb2bbc6a7ff618467f4c933f6446) known=Gentoo ;;
     # last change: 2015-08-08
-    # permalink: https://gitweb.gentoo.org/repo/gentoo.git/tree/app-shells/bash/files/dot-bashrc?id=56bd759df1d0c750a065b8c845e93d5dfa6b549d
-    # latest: https://gitweb.gentoo.org/repo/gentoo.git/tree/app-shells/bash/files/dot-bashrc
+    # permalink: https://gitweb.gentoo.org/repo/gentoo.git/tree/app-shells/bash/files/skel/dot-bashrc?id=08cf343c6b949ddaf1a895b94775c15984b3c9b6
+    # latest: https://gitweb.gentoo.org/repo/gentoo.git/tree/app-shells/bash/files/skel/dot-bashrc
 
   *) known= ;;
 esac
