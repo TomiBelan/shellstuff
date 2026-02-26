@@ -1,6 +1,6 @@
 # Tomi's universal bash initialization file
 
-# shellcheck shell=bash disable=SC1091,SC2016,SC2164,SC2244,SC2250,SC2312
+# shellcheck shell=bash source=/dev/null enable=all disable=SC2016,SC2244,SC2250
 
 __shellstuff_dir=$(dirname "${BASH_SOURCE[0]}")
 __shellstuff_dir=$(readlink -fv "$__shellstuff_dir")
@@ -58,6 +58,7 @@ type nano &>/dev/null && export EDITOR=nano
 # It sets LESSOPEN and LESSCLOSE.
 # On Arch, Fedora, and Gentoo, LESSOPEN should be already set by /etc/profile.d
 # or /etc/env.d, and it might be named `lesspipe.sh` anyway.
+# shellcheck disable=SC2312 # ignore failures, we don't have set -e anyway
 [[ -z "$LESSOPEN" ]] && type lesspipe &>/dev/null && eval "$(lesspipe)"
 
 # Borrowed from Debian/Ubuntu's /etc/skel/.bashrc. Should also work on Arch.
@@ -65,8 +66,10 @@ type nano &>/dev/null && export EDITOR=nano
 # On Fedora and Gentoo the system bashrc file already takes care of this.
 if [[ -z "$LS_COLORS" ]] && [[ -x /usr/bin/dircolors ]]; then
   if [[ -r ~/.dircolors ]]; then
+    # shellcheck disable=SC2312 # ignore failures, we don't have set -e anyway
     eval "$(dircolors -b ~/.dircolors)"
   else
+    # shellcheck disable=SC2312 # ignore failures, we don't have set -e anyway
     eval "$(dircolors -b)"
   fi
 fi
@@ -124,7 +127,9 @@ h () {
 # editor. Useful for fixing typos. (It only works with the most recent command
 # because bash/readline doesn't tell us the currently edited history index.)
 __histdelete () {
-  READLINE_LINE=$(HISTTIMEFORMAT=@ history 1 | sed -r 's/^[^@]+@//')
+  local s
+  s=$(HISTTIMEFORMAT=@ history 1) || return
+  READLINE_LINE=${s#*@}
   READLINE_POINT=${#READLINE_LINE}
   history -d -1
 }
@@ -183,11 +188,14 @@ alias m='less'
 # `pskt` lists all processes except kernel threads (descendants of PID 2).
 alias pskt='ps --ppid 2 -p 2 --deselect'
 type ag &>/dev/null && alias ag='ag --color-match="4;31"'
-ct() { cd "$(mktemp -d)"; }
-[[ -d "$HOME/tmpt" ]] && ctt() { cd "$(TMPDIR="$HOME/tmpt" mktemp -d)"; }
+# shellcheck disable=SC2164 # cd is the last statement
+ct() { local d; d=$(mktemp -d) && cd "$d"; }
+# shellcheck disable=SC2164 # cd is the last statement
+[[ -d "$HOME/tmpt" ]] && ctt() { local d; d=$(TMPDIR="$HOME/tmpt" mktemp -d) && cd "$d"; }
 
 # ----- RRPAK ------------------------------------------------------------------
 
+# shellcheck disable=SC2312 # ignore failures, we don't have set -e anyway
 eval "$("$__shellstuff_dir/rrpak" hook)"
 
 # ----- PROMPT AND WINDOW TITLE ------------------------------------------------
@@ -296,6 +304,7 @@ __debugtrap () {
         # $'\n', $'\r', $'\e', $'\x7f', $'\x8f', $'\xc3'.
         if [[ "$titlecommand" =~ ^[[:print:]]+$ ]]; then
           log+=" t:${titlecommand@Q}"
+          # shellcheck disable=SC2154 # variables declared elsewhere
           __debugtrap_echo "${RRPROMPT_TITLE_PREFIX@P}$titlecommand @ ${RRPROMPT_TITLE@P}${RRPROMPT_TITLE_SUFFIX@P}"
         fi
       fi
